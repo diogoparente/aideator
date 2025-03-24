@@ -9,7 +9,7 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useState, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
+import { createClient, getAuthenticatedUser, getUserProfile } from "@/lib/supabase/client"
 
 import {
   Avatar,
@@ -39,6 +39,10 @@ export function useUser() {
     name: string
     email: string
     avatar: string
+    username?: string
+    website?: string
+    bio?: string
+    updated_at?: string
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
@@ -57,28 +61,30 @@ export function useUser() {
     }
 
     lastFetchRef.current = now
+    setLoading(true)
 
     try {
-      // Get authenticated user
-      const { data: { user: authUser }, error: authError } = await supabaseClient.auth.getUser()
+      // Get authenticated user using the shared helper function
+      const authUser = await getAuthenticatedUser();
 
-
-      if (authError || !authUser) {
+      if (!authUser) {
         setUser(null)
         setLoading(false)
         return
       }
 
-      // Get profile data
-      const { data: profile, error: profileError } = await supabaseClient
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .single()
+      // Get profile data using the shared helper function
+      const profile = await getUserProfile(authUser.id);
 
-
-      if (profileError) {
-        setUser(null)
+      if (!profile) {
+        // Still create a user object with auth data even if profile is missing
+        const userData = {
+          id: authUser.id,
+          name: authUser.user_metadata?.full_name || "Unknown User",
+          email: authUser.email || "",
+          avatar: authUser.user_metadata?.avatar_url || "",
+        }
+        setUser(userData)
         setLoading(false)
         return
       }
@@ -88,15 +94,20 @@ export function useUser() {
         name: profile?.full_name || authUser.user_metadata?.full_name || "Unknown User",
         email: authUser.email || "",
         avatar: profile?.avatar_url || authUser.user_metadata?.avatar_url || "",
+        username: profile?.username,
+        website: profile?.website,
+        bio: profile?.bio,
+        updated_at: profile?.updated_at
       }
 
       setUser(userData)
     } catch (error) {
+      console.error("Error fetching user data:", error)
       setUser(null)
     } finally {
       setLoading(false)
     }
-  }, [supabaseClient])
+  }, [])
 
   useEffect(() => {
     // Initial fetch
@@ -141,6 +152,7 @@ export function NavUser() {
   const { isMobile } = useSidebar()
   const router = useRouter()
 
+  // Show loading state
   if (loading) {
     return (
       <SidebarMenu>
@@ -161,6 +173,7 @@ export function NavUser() {
     )
   }
 
+  // Show login button if user is not authenticated
   if (!user) {
     return (
       <SidebarMenu>
@@ -184,6 +197,7 @@ export function NavUser() {
     )
   }
 
+  // Show user profile when authenticated
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -193,7 +207,7 @@ export function NavUser() {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <Avatar className="h-8 w-8 rounded-lg grayscale">
+              <Avatar className="h-8 w-8 rounded-lg">
                 <AvatarImage src={user.avatar} alt={user.name} />
                 <AvatarFallback className="rounded-lg">
                   {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
@@ -202,7 +216,7 @@ export function NavUser() {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.name}</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {user.email}
+                  {user.username ? `@${user.username}` : user.email}
                 </span>
               </div>
               <MoreVerticalIcon className="ml-auto size-4" />
@@ -227,6 +241,11 @@ export function NavUser() {
                   <span className="truncate text-xs text-muted-foreground">
                     {user.email}
                   </span>
+                  {user.username && (
+                    <span className="truncate text-xs text-muted-foreground">
+                      @{user.username}
+                    </span>
+                  )}
                 </div>
               </div>
             </DropdownMenuLabel>
@@ -245,6 +264,26 @@ export function NavUser() {
                 Notifications
               </DropdownMenuItem>
             </DropdownMenuGroup>
+            {user.bio && (
+              <>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-1.5 text-xs">
+                  <p className="line-clamp-3 text-muted-foreground">{user.bio}</p>
+                </div>
+              </>
+            )}
+            {user.website && (
+              <div className="px-2 py-1 text-xs">
+                <a
+                  href={user.website.startsWith('http') ? user.website : `https://${user.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline truncate block"
+                >
+                  {user.website}
+                </a>
+              </div>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={signOut}>
               <LogOutIcon className="mr-2 h-4 w-4" />

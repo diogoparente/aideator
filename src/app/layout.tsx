@@ -3,7 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { SupabaseProvider } from "@/lib/supabase/provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
-
+import { Sidebar, SidebarRail } from "@/components/ui/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -31,10 +33,18 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <SupabaseProvider>
-          <main className="flex h-screen flex-col items-center justify-center">
-            {children}
-          </main>
-          <Toaster />
+          <SidebarProvider>
+            <AppSidebar variant="inset" />
+            <SidebarTrigger />
+            <main>
+              <div className="flex">
+                <div className="w-full">
+                  {children}
+                </div>
+              </div>
+            </main>
+            <Toaster />
+          </SidebarProvider>
         </SupabaseProvider>
       </body>
     </html>

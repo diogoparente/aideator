@@ -4,8 +4,8 @@ import { Database } from '@/types/supabase';
 // Store the current guest ID in memory
 let currentGuestId: string | null = null;
 
-// Create a singleton instance
-let supabaseInstance: ReturnType<typeof createSupabaseClient<Database>> | null = null;
+// Create a singleton instance - use any for the schema type to avoid TypeScript errors
+let supabaseInstance: ReturnType<typeof createSupabaseClient<Database, any>> | null = null;
 
 // Initialize the Supabase client
 export const createClient = (guestId?: string) => {
@@ -34,7 +34,8 @@ export const createClient = (guestId?: string) => {
     headers['x-guest-id'] = currentGuestId;
   }
 
-  supabaseInstance = createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
+  // Use "any" type for schema to avoid TypeScript errors
+  supabaseInstance = createSupabaseClient<Database, any>(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -54,6 +55,10 @@ export const createClient = (guestId?: string) => {
         return fetch(...args);
       },
     },
+    // Set the default schema to appointmint
+    db: {
+      schema: 'appointmint'
+    }
   });
 
   return supabaseInstance;
@@ -62,6 +67,7 @@ export const createClient = (guestId?: string) => {
 // Helper to get authenticated user - more secure than using session directly
 export const getAuthenticatedUser = async () => {
   const supabase = createClient();
+
   const { data: { user }, error } = await supabase.auth.getUser();
 
   if (error) {
@@ -70,6 +76,42 @@ export const getAuthenticatedUser = async () => {
   }
 
   return user;
+};
+
+// Helper to get user profile from public schema
+export const getUserProfile = async (userId: string) => {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .schema('public')
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching user profile:', error);
+    return null;
+  }
+
+  return data;
+};
+
+// Helper to get all user profiles from public schema
+export const getAllProfiles = async () => {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .schema('public')
+    .from('profiles')
+    .select('*');
+
+  if (error) {
+    console.error('Error fetching profiles:', error);
+    return [];
+  }
+
+  return data;
 };
 
 // Set the current guest ID

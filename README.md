@@ -53,3 +53,37 @@ To learn more about the technologies used in this project:
 ## Deployment
 
 Deploy your app using [Vercel](https://vercel.com) for the best Next.js experience.
+
+
+
+
+
+
+
+
+
+
+grant usage on schema appointmint to authenticated;
+
+
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA "appointmint" TO authenticated;
+
+
+
+-- Policy for users to select their own clicks records
+CREATE POLICY "users_select_own_clicks" 
+ON appointmint.clicks
+FOR SELECT 
+USING (auth.uid() = id);
+
+-- Policy for users to insert their own clicks records
+CREATE POLICY "users_insert_own_clicks" 
+ON appointmint.clicks
+FOR INSERT 
+WITH CHECK (auth.uid() = id);
+
+-- Policy for users to update their own clicks records
+CREATE POLICY "users_update_own_clicks" 
+ON appointmint.clicks
+FOR UPDATE 
+USING (auth.uid() = id);
