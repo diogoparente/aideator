@@ -1,4 +1,4 @@
-# AppointMint
+# Your Web App
 
 A modern web application built with Next.js 15.2.3, Supabase Auth, and shadcn UI components.
 
