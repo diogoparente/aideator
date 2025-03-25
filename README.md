@@ -1,5 +1,7 @@
 # Your Web App
 
+![Screenshot 2025-03-25 165359](https://github.com/user-attachments/assets/96d9244a-749f-4245-b5d2-4dd5ed034a97)
+
 A modern web application built with Next.js 15.2.3, Supabase Auth, and shadcn UI components.
 
 ## Technologies
@@ -24,6 +26,8 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Demo here -> [https://clicker-lemon.vercel.app/]
+
 
 ## Authentication
 
