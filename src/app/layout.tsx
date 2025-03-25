@@ -7,6 +7,7 @@ import { SidebarContent, SidebarProvider, SidebarTrigger } from "@/components/ui
 import { AppSidebar } from "@/components/app-sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { Analytics } from "@vercel/analytics/react"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,6 +35,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <Analytics />
         <SupabaseProvider>
           <SidebarProvider>
             <TooltipProvider>
