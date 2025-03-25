@@ -5,7 +5,7 @@ import { getAuthenticatedUser, getAllProfiles } from "@/lib/supabase/client";
 import { useSupabase } from "@/lib/supabase/provider";
 import { User } from "@supabase/supabase-js";
 import { toast } from "sonner";
-import { Leaderboard } from "@/components/leaderboard";
+import Leaderboard from "@/components/leaderboard";
 import PlayerStats from "@/components/player-stats";
 import { updateClickAction } from "@/app/actions";
 
@@ -37,6 +37,8 @@ export default function GameContainer() {
     const processingRef = useRef(false);
     const supabase = useSupabase();
     const updateQueue = useRef<ClickRecord[]>([]);
+    const channelRef = useRef<ReturnType<typeof useSupabase.prototype.channel> | null>(null);
+    const dataFreshness = useRef<number>(0);
 
     // Get current user
     useEffect(() => {
@@ -131,11 +133,21 @@ export default function GameContainer() {
             return newData;
         });
 
+        // Update timestamp of last data refresh
+        dataFreshness.current = Date.now();
         processingRef.current = false;
     }, []);
 
     // Fetch clicks data and subscribe to real-time updates
     useEffect(() => {
+        // Clean up function for subscription
+        const cleanup = () => {
+            if (channelRef.current) {
+                supabase.removeChannel(channelRef.current);
+                channelRef.current = null;
+            }
+        };
+
         async function fetchClicks() {
             // Only fetch data if user is logged in
             if (!user?.id) {
@@ -152,6 +164,7 @@ export default function GameContainer() {
 
                 if (error) throw error;
                 setClicksData(data || []);
+                dataFreshness.current = Date.now();
 
                 // Set user's click count if available
                 const userClick = data?.find(click => click.user_id === user.id);
@@ -167,26 +180,58 @@ export default function GameContainer() {
 
         fetchClicks();
 
-        // Create a single channel for all real-time updates
-        const channel = supabase
-            .channel('game-updates')
-            .on('postgres_changes',
-                { event: '*', schema: 'public', table: 'clicks' },
-                (payload) => {
-                    if (payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
-                        // Queue the update instead of immediately updating state
-                        updateQueue.current.push(payload.new as ClickRecord);
+        // Create a single channel for all real-time updates with enhanced config for browser compatibility
+        cleanup(); // Clean up existing subscription first
 
-                        // Process the queue on next animation frame for efficiency
-                        requestAnimationFrame(processUpdateQueue);
+        try {
+            const channel = supabase
+                .channel('game-updates', {
+                    config: {
+                        broadcast: { self: true },
+                        presence: { key: '' } // Minimize presence features for Brave
                     }
                 })
-            .subscribe();
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'clicks' },
+                    (payload) => {
+                        if (payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
+                            // Queue the update instead of immediately updating state
+                            updateQueue.current.push(payload.new as ClickRecord);
+
+                            // Process the queue on next animation frame for efficiency
+                            requestAnimationFrame(processUpdateQueue);
+                        }
+                    })
+                .subscribe(status => {
+                    console.log(`Game container subscription status: ${status}`);
+
+                    if (status === 'CHANNEL_ERROR') {
+                        console.warn('Supabase channel error in game container');
+
+                        // If subscription fails, schedule periodic data refreshes as fallback
+                        const refreshInterval = setInterval(() => {
+                            // Only refresh if data is older than 3 seconds
+                            if (Date.now() - dataFreshness.current > 3000) {
+                                fetchClicks();
+                            }
+                        }, 3000);
+
+                        // Clean up interval when component unmounts
+                        return () => clearInterval(refreshInterval);
+                    }
+                });
+
+            channelRef.current = channel;
+        } catch (error) {
+            console.error("Error setting up real-time subscription:", error);
+
+            // If subscription fails completely, schedule a data refresh
+            const refreshInterval = setInterval(fetchClicks, 3000);
+            return () => clearInterval(refreshInterval);
+        }
 
         // Clean up subscription on unmount
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return cleanup;
     }, [user, supabase, processUpdateQueue]);
 
     // Process real-time click data updates with requestAnimationFrame for smooth animations
@@ -254,8 +299,22 @@ export default function GameContainer() {
                 }
 
                 // Update local state with the confirmed count from the server
-                if (result.newCount) {
+                if (result.newCount !== undefined) {
                     setClickCount(result.newCount);
+
+                    // Also update the clicks data to ensure leaderboard is updated
+                    setClicksData(prevData => {
+                        const newData = [...prevData];
+                        const index = newData.findIndex(click => click.id === user.id);
+
+                        if (index >= 0) {
+                            newData[index] = { ...newData[index], qty: result.newCount || 0 };
+                        } else {
+                            newData.push({ id: user.id, qty: result.newCount || 0 });
+                        }
+
+                        return newData;
+                    });
                 }
             } catch (error) {
                 console.error("Error updating click count:", error);
@@ -288,19 +347,23 @@ export default function GameContainer() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-1 flex flex-col h-full">
                 <PlayerStats
-                    user_id={user?.id}
                     clickCount={clickCount}
                     rank={userRank}
                     username={username}
                     loading={isLoading}
-                    onUpdateClickAction={handleClickUpdate}
+                    onClickButton={async () => await handleClickUpdate(clickCount + 1)}
                 />
             </div>
             <div className="md:col-span-2 flex flex-col h-full">
                 <Leaderboard
-                    allPlayers={allPlayers}
-                    isLoading={isLoading}
-                    currentUser={user}
+                    players={allPlayers.map(player => ({
+                        id: player.id,
+                        username: player.username,
+                        clicks: player.qty,
+                        rank: player.rank
+                    }))}
+                    currentUserId={user?.id || null}
+                    loading={isLoading}
                 />
             </div>
         </div>

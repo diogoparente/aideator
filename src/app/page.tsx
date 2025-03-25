@@ -1,26 +1,97 @@
-import { Card } from "@/components/ui/card";
-import { GameHeader } from "@/components/game-header";
-import { GameFooter } from "@/components/game-footer";
-import GameContainer from "@/components/game-container";
+'use client';
 
-export default function Home() {
+import { useClickerGame } from "@/hooks/use-clicker-game";
+import PlayerStats from "@/components/player-stats";
+import Leaderboard from "@/components/leaderboard";
+import ConnectionStatus from "@/components/connection-status";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+
+export default function ClickerGamePage() {
+  const {
+    user,
+    clickCount,
+    userRank,
+    username,
+    isLoading,
+    connectionStatus,
+    allPlayers,
+    handleClickUpdate
+  } = useClickerGame();
+
+  const formattedPlayers = allPlayers.map(player => ({
+    id: player.id,
+    username: player.username || 'Anonymous',
+    clicks: player.qty,
+    rank: player.rank
+  }));
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-8">
-      <div className="max-w-6xl w-full">
-        <div className="grid gap-6">
+    <div className="container max-w-6xl py-10 space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Clicker Game</h1>
+        <p className="text-muted-foreground">
+          Click as fast as you can to climb the leaderboard!
+        </p>
+      </div>
 
-          <Card className="w-full">
-            <GameHeader />
-            <GameContainer />
-            <GameFooter />
-          </Card>
+      <Separator />
 
-          <div className="text-sm text-center text-muted-foreground mt-8">
-            <p>This game demonstrates real-time database updates with optimistic UI updates for maximum performance.</p>
-            <p>The performance metrics in the footer help you monitor the game's responsiveness.</p>
-          </div>
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* Player Stats */}
+        <div className="md:col-span-1">
+          <PlayerStats
+            username={username}
+            clickCount={clickCount}
+            rank={userRank}
+            loading={isLoading}
+            onClickButton={handleClickUpdate}
+          />
+        </div>
+
+        {/* Leaderboard */}
+        <div className="md:col-span-2">
+          <Leaderboard
+            players={formattedPlayers}
+            currentUserId={user?.id || null}
+            loading={isLoading}
+          />
         </div>
       </div>
-    </main>
+
+      {/* Game Info */}
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Game Rules */}
+        <Card>
+          <CardHeader>
+            <CardTitle>How to Play</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p>
+              1. Click the button as many times as you can
+            </p>
+            <p>
+              2. Each click adds to your total score
+            </p>
+            <p>
+              3. Your score is saved in real-time
+            </p>
+            <p>
+              4. Players are ranked by their total clicks
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Connection Status */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Connection Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ConnectionStatus status={connectionStatus} />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
-}
+} 
