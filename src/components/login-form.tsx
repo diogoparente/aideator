@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { handleAuthError, handleError } from "@/lib/error-handler"
+import Image from "next/image"
 
 export function LoginForm({
     className,
@@ -36,7 +37,7 @@ export function LoginForm({
             const supabase = createClient()
 
             if (isLogin) {
-                const { data, error } = await supabase.auth.signInWithPassword({
+                const { error } = await supabase.auth.signInWithPassword({
                     email,
                     password,
                 })
@@ -58,7 +59,7 @@ export function LoginForm({
 
                 toast.success("Logged in successfully")
             } else {
-                const { data, error } = await supabase.auth.signUp({
+                const { error } = await supabase.auth.signUp({
                     email,
                     password,
                     options: {
@@ -81,18 +82,18 @@ export function LoginForm({
 
             router.push("/dashboard")
             router.refresh()
-        } catch (error: any) {
-            if (error.message?.includes("Email not confirmed")) {
+        } catch (error: unknown) {
+            if ((error as Error).message?.includes("Email not confirmed")) {
                 toast.error("Email not confirmed. Please check your inbox or request a new confirmation email.")
                 router.push(`/verify-email?email=${encodeURIComponent(email)}`)
                 return
             }
-            if (error.message?.includes("Invalid login credentials")) {
+            if ((error as Error).message?.includes("Invalid login credentials")) {
                 toast.error("Invalid email or password. Please try again.")
                 setIsLoading(false)
                 return
             }
-            if (error.message?.includes("email rate limit exceeded")) {
+            if ((error as Error).message?.includes("email rate limit exceeded")) {
                 toast.error("Too many sign-up attempts with this email. Please try again later.")
                 setIsLoading(false)
                 return
@@ -118,7 +119,7 @@ export function LoginForm({
             if (error) {
                 handleError(error)
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             handleError(error)
         } finally {
             setIsLoading(false)
@@ -178,7 +179,7 @@ export function LoginForm({
 
                     router.push("/dashboard")
                 }
-            } catch (error: any) {
+            } catch (error: unknown) {
                 handleAuthError(error)
             }
         }
@@ -372,10 +373,11 @@ export function LoginForm({
                         </div>
                     </form>
                     <div className="relative hidden bg-muted md:block">
-                        <img
+                        <Image
                             src="/placeholder.svg"
                             alt="Image"
-                            className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
+                            fill
+                            className="object-cover dark:brightness-[0.2] dark:grayscale"
                         />
                     </div>
                 </CardContent>

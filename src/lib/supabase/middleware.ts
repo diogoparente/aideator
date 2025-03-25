@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { AuthError } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
@@ -16,7 +17,7 @@ export async function updateSession(request: NextRequest) {
             return request.cookies.getAll()
           },
           setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
             supabaseResponse = NextResponse.next({
               request,
             })
@@ -42,6 +43,7 @@ export async function updateSession(request: NextRequest) {
     // If there's an authentication error and user is trying to access a protected route
     if (
       error &&
+      error instanceof AuthError &&
       error.name === "AuthSessionMissingError" &&
       !request.nextUrl.pathname.startsWith('/login') &&
       !request.nextUrl.pathname.startsWith('/auth')
@@ -75,11 +77,11 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Middleware error:', error)
 
     // If we get an auth error, redirect to login and clear cookies
-    if (error.name === "AuthSessionMissingError") {
+    if (error instanceof AuthError && error.name === "AuthSessionMissingError") {
       const url = request.nextUrl.clone()
       url.pathname = '/login'
 

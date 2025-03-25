@@ -11,7 +11,7 @@ interface ConnectionStatusProps {
 
 export default function ConnectionStatus({ status }: ConnectionStatusProps) {
     return (
-        <div className="flex items-center gap-2">
+        <div className={cn("flex items-center gap-2", status === "error" && "text-red-500")}>
             <StatusIcon status={status} />
             <div>
                 <p className="font-medium">{getStatusTitle(status)}</p>

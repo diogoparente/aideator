@@ -1,6 +1,3 @@
-"use client";
-
-import { useState, useEffect } from "react";
 import Leaderboard from "@/components/leaderboard";
 import PlayerStats from "@/components/player-stats";
 import ConnectionStatus from "@/components/connection-status";

@@ -25,7 +25,6 @@ export default function PlayerStats({
     const [clickRate, setClickRate] = useState(0);
     const clickTimestamps = useRef<number[]>([]);
     const clickRateTimerRef = useRef<number | null>(null);
-    const animateRef = useRef(false);
     const [isButtonAnimating, setIsButtonAnimating] = useState(false);
 
     // Calculate click rate

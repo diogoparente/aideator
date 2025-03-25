@@ -1,4 +1,4 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createClient as createSupabaseClient, AuthError } from '@supabase/supabase-js';
 import { Database } from '@/types/supabase';
 import { toast } from 'sonner';
 import { handleAuthError, handleError } from '@/lib/error-handler';
@@ -7,7 +7,7 @@ import { handleAuthError, handleError } from '@/lib/error-handler';
 let currentGuestId: string | null = null;
 
 // Create a singleton instance - use any for the schema type to avoid TypeScript errors
-let supabaseInstance: ReturnType<typeof createSupabaseClient<Database, any>> | null = null;
+let supabaseInstance: ReturnType<typeof createSupabaseClient<Database>> | null = null;
 
 // Initialize the Supabase client
 export const createClient = (guestId?: string) => {
@@ -38,7 +38,7 @@ export const createClient = (guestId?: string) => {
 
   try {
     // Use "any" type for schema to avoid TypeScript errors
-    supabaseInstance = createSupabaseClient<Database, any>(supabaseUrl, supabaseAnonKey, {
+    supabaseInstance = createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
@@ -100,7 +100,8 @@ export const createClient = (guestId?: string) => {
         if (!handleAuthError(error)) {
           throw error;
         }
-        return { data: { user: null }, error: error as any };
+        // Cast error to AuthError to match expected return type
+        return { data: { user: null }, error: error as AuthError };
       }
     };
 
@@ -113,7 +114,7 @@ export const createClient = (guestId?: string) => {
         if (!handleAuthError(error)) {
           throw error;
         }
-        return { data: { session: null }, error: error as any };
+        return { data: { session: null }, error: error as AuthError };
       }
     };
 
@@ -141,8 +142,9 @@ export const getAuthenticatedUser = async (options?: { ensureProfile?: boolean }
       if (!sessionStr) {
         return null;
       }
-    } catch (e) {
-      // Ignore errors reading from localStorage (e.g., in incognito mode)
+    } catch (error: unknown) {
+      handleError(error);
+      return null;
     }
   }
 

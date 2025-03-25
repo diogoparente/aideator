@@ -5,7 +5,6 @@ export async function GET(request: NextRequest) {
     const requestUrl = new URL(request.url)
     const token = requestUrl.searchParams.get('token')
     const type = requestUrl.searchParams.get('type')
-    const redirectTo = requestUrl.searchParams.get('redirect_to') || '/'
 
     // Check if we have the required parameters
     if (!token || !type) {
@@ -21,15 +20,15 @@ export async function GET(request: NextRequest) {
         // but we need to handle the redirect
 
         // After verification, get the user session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-        if (sessionError) {
-            console.error('Error getting session after verification:', sessionError)
-            return NextResponse.redirect(new URL('/login?error=verification_session_error', request.url))
+        if (userError) {
+            console.error('Error getting user after verification:', userError)
+            return NextResponse.redirect(new URL('/login?error=verification_user_error', request.url))
         }
 
         // If the user is authenticated, redirect to the dashboard
-        if (session) {
+        if (user) {
             return NextResponse.redirect(new URL('/dashboard', request.url))
         }
 

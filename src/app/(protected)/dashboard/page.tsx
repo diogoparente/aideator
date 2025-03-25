@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
 import { DataTable } from "@/components/data-table"
 import { SectionCards } from "@/components/section-cards"
@@ -18,7 +18,7 @@ export default function Page() {
             <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           </div>
           <p className="text-muted-foreground">
-            Welcome back! Here's an overview of your account activity and data.
+            Welcome back! Here&apos;s an overview of your account activity and data.
           </p>
         </div>
       </CardHeader>

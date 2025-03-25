@@ -21,6 +21,7 @@ export function ErrorBoundary({ children }: ErrorBoundaryProps) {
         // Handler for unhandled promise rejections (async errors)
         const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
             console.error('Unhandled Promise rejection:', event.reason)
+            setHasError(true)
 
             const now = Date.now();
             const isSameError = lastErrorMessage === event.reason?.message;
@@ -55,6 +56,7 @@ export function ErrorBoundary({ children }: ErrorBoundaryProps) {
         // Handler for regular JS errors
         const handleError = (event: ErrorEvent) => {
             console.error('Error:', event.error)
+            setHasError(true)
 
             const now = Date.now();
             const isSameError = lastErrorMessage === event.error?.message;
@@ -103,7 +105,7 @@ export function ErrorBoundary({ children }: ErrorBoundaryProps) {
             <div className="flex h-screen w-full flex-col items-center justify-center p-4">
                 <h2 className="mb-4 text-2xl font-bold">Something went wrong</h2>
                 <p className="mb-4 text-center">
-                    We're sorry, but something unexpected happened. Please try refreshing the page.
+                    We&apos;re sorry, but something unexpected happened. Please try refreshing the page.
                 </p>
                 <button
                     className="rounded bg-primary px-4 py-2 text-white"

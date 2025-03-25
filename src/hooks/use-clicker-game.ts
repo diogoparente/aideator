@@ -5,6 +5,7 @@ import { User } from "@supabase/supabase-js";
 import { useSupabase } from "@/lib/supabase/provider";
 import { toast } from "sonner";
 import { updateClickAction } from "@/app/actions";
+import { handleError } from "@/lib/error-handler";
 
 // Type definitions
 export interface UserProfile {
@@ -90,7 +91,8 @@ export function useClickerGame() {
 
                 if (error) throw error;
                 setProfilesData(data || []);
-            } catch (error) {
+            } catch (error: unknown) {
+                handleError(error);
                 toast.error("Failed to load player data", {
                     description: "Unable to fetch player profiles"
                 });

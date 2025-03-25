@@ -9,7 +9,7 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useState, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { createClient, getAuthenticatedUser, getUserProfile, createUserProfile } from "@/lib/supabase/client"
+import { createClient, getAuthenticatedUser, getUserProfile } from "@/lib/supabase/client"
 
 import {
   Avatar,
@@ -125,7 +125,7 @@ export function useUser() {
     document.addEventListener("visibilitychange", handleVisibilityChange)
 
     // Listen for auth state changes
-    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event) => {
       // Only fetch on meaningful auth events
       if (["SIGNED_IN", "TOKEN_REFRESHED", "USER_UPDATED"].includes(event)) {
         fetchUserData(true) // Force update on important auth events

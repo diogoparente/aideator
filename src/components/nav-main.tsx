@@ -1,8 +1,7 @@
 "use client"
 
-import { MailIcon, User2Icon, LogOutIcon, type LucideIcon } from "lucide-react"
+import { User2Icon, type LucideIcon } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -20,7 +19,7 @@ export function NavMain({
     icon?: LucideIcon
   }[]
 }) {
-  const { user, signOut } = useUser()
+  const { user } = useUser()
   return (
     <SidebarGroup>
       <SidebarGroupContent className="flex flex-col gap-2">

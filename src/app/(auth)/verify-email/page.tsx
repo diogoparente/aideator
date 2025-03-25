@@ -1,5 +1,6 @@
 "use client"
 
+import { Suspense } from "react"
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
@@ -11,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast, Toaster } from "sonner"
 import { handleError } from "@/lib/error-handler"
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
     const [email, setEmail] = useState("")
     const [verificationCode, setVerificationCode] = useState("")
     const [isLoading, setIsLoading] = useState(false)
@@ -50,7 +51,7 @@ export default function VerifyEmailPage() {
 
             setIsSuccess(true)
             toast.success("Verification email sent! Please check your inbox.")
-        } catch (error: any) {
+        } catch (error: unknown) {
             handleError(error)
         } finally {
             setIsLoading(false)
@@ -86,7 +87,7 @@ export default function VerifyEmailPage() {
             toast.success("Email verified successfully!")
             // Redirect to dashboard or login page
             router.push("/login?success=verification_complete")
-        } catch (error: any) {
+        } catch (error: unknown) {
             handleError(error)
         } finally {
             setIsCodeLoading(false)
@@ -111,7 +112,7 @@ export default function VerifyEmailPage() {
                                     Please check your inbox and follow the link to verify your email address.
                                 </p>
                                 <p className="text-sm text-muted-foreground mt-4">
-                                    Don't see the email? Check your spam folder or request another verification email.
+                                    Don&apos;t see the email? Check your spam folder or request another verification email.
                                 </p>
 
                                 <div className="mt-6 pt-6 border-t border-border">
@@ -216,4 +217,12 @@ export default function VerifyEmailPage() {
             </div>
         </div>
     )
-} 
+}
+
+export default function VerifyEmailPage() {
+    return (
+        <Suspense>
+            <VerifyEmailContent />
+        </Suspense>
+    )
+}

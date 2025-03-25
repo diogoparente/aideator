@@ -8,7 +8,7 @@ const ERROR_COOLDOWN_MS = 5000; // Only show error once every 5 seconds
  * Global error handler for authentication errors
  * This centralizes error handling logic for auth-related errors
  */
-export const handleAuthError = (error: any): boolean => {
+export const handleAuthError = (error: unknown): boolean => {
     // If no error, there's nothing to handle
     if (!error) return false;
 
@@ -16,7 +16,7 @@ export const handleAuthError = (error: any): boolean => {
     const shouldShowNotification = now - lastAuthErrorTime > ERROR_COOLDOWN_MS;
 
     // Check for specific auth errors first that we want to handle specially
-    if (error.message) {
+    if (error instanceof Error) {
         // Invalid login credentials
         if (error.message.includes("Invalid login credentials")) {
             toast.error("Invalid email or password. Please try again.");
@@ -37,7 +37,7 @@ export const handleAuthError = (error: any): boolean => {
     }
 
     // If it's an authentication session missing error
-    if (error.name === 'AuthSessionMissingError') {
+    if (error instanceof Error && error.name === 'AuthSessionMissingError') {
         if (shouldShowNotification) {
             lastAuthErrorTime = now;
             toast.error('Your session has expired. Please log in again.');
@@ -45,7 +45,7 @@ export const handleAuthError = (error: any): boolean => {
             // Clear any potentially corrupted session data
             if (typeof window !== 'undefined') {
                 const cookies = document.cookie.split(';');
-                for (let cookie of cookies) {
+                for (const cookie of cookies) {
                     const cookieName = cookie.split('=')[0].trim();
                     if (cookieName.includes('supabase') || cookieName.includes('auth')) {
                         document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
@@ -62,12 +62,11 @@ export const handleAuthError = (error: any): boolean => {
     }
 
     // Check for other auth-related errors
-    if (error.status === 401 || error.status === 403 ||
-        (error.message && (
-            error.message.includes('auth') ||
-            error.message.includes('session') ||
-            error.message.includes('token')
-        ))
+    if (error instanceof Error && (error.message && (
+        error.message.includes('auth') ||
+        error.message.includes('session') ||
+        error.message.includes('token')
+    ))
     ) {
         if (shouldShowNotification) {
             lastAuthErrorTime = now;
@@ -89,7 +88,7 @@ export const handleAuthError = (error: any): boolean => {
 /**
  * Generic error handler that can be used throughout the application
  */
-export const handleError = (error: any, customMessage?: string): void => {
+export const handleError = (error: unknown, customMessage?: string): void => {
     console.error('Error:', error);
 
     // First check if it's an auth error
@@ -100,7 +99,7 @@ export const handleError = (error: any, customMessage?: string): void => {
     // If not an auth error, show a generic or custom error message
     if (customMessage) {
         toast.error(customMessage);
-    } else if (error.message) {
+    } else if (error instanceof Error) {
         toast.error(error.message);
     } else {
         toast.error('An unexpected error occurred');
