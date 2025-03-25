@@ -37,6 +37,10 @@ export function useClickerGame() {
     const updateQueue = useRef<ClickRecord[]>([]);
     const channelRef = useRef<ReturnType<typeof useSupabase.prototype.channel> | null>(null);
     const dataFreshness = useRef<number>(0);
+    const reconnectAttempts = useRef<number>(0);
+    const maxReconnectAttempts = 5;
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const supabase = useSupabase();
     const prevScores = useRef<Record<string, number>>({});
 
@@ -135,88 +139,166 @@ export function useClickerGame() {
         processingRef.current = false;
     }, []);
 
-    // Set up real-time subscription
-    useEffect(() => {
-        const cleanup = () => {
-            if (channelRef.current) {
-                supabase.removeChannel(channelRef.current);
-                channelRef.current = null;
-            }
-        };
-
-        async function fetchClicksAndSubscribe() {
-            if (!user?.id) {
-                setClicksData([]);
-                setClickCount(0);
-                return;
-            }
-
+    // Clean up function for subscriptions and intervals
+    const cleanupResources = useCallback(() => {
+        // Clean up channel
+        if (channelRef.current) {
             try {
-                const { data, error } = await supabase
-                    .schema('public')
-                    .from('clicks')
-                    .select('id, qty');
-
-                if (error) throw error;
-                setClicksData(data || []);
-                dataFreshness.current = Date.now();
-
-                // Set user's click count if available
-                const userClick = data?.find(click => click.id === user.id);
-                if (userClick) {
-                    setClickCount(userClick.qty || 0);
-                }
-
-                // Setup channel
-                cleanup();
-
-                const channel = supabase
-                    .channel('game-updates', {
-                        config: {
-                            broadcast: { self: true },
-                            presence: { key: '' }
-                        }
-                    })
-                    .on('postgres_changes',
-                        { event: '*', schema: 'public', table: 'clicks' },
-                        (payload) => {
-                            if (payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
-                                updateQueue.current.push(payload.new as ClickRecord);
-                                requestAnimationFrame(processUpdateQueue);
-                            }
-                        }
-                    )
-                    .subscribe(status => {
-                        setConnectionStatus(status === 'SUBSCRIBED' ? 'connected' : status === 'CHANNEL_ERROR' ? 'error' : 'connecting');
-
-                        if (status === 'CHANNEL_ERROR') {
-                            console.warn('Supabase channel error');
-
-                            // Fallback to periodic refresh if subscription fails
-                            const refreshInterval = setInterval(() => {
-                                if (Date.now() - dataFreshness.current > 3000) {
-                                    fetchClicksAndSubscribe();
-                                }
-                            }, 3000);
-
-                            return () => clearInterval(refreshInterval);
-                        }
-                    });
-
-                channelRef.current = channel;
-
+                supabase.removeChannel(channelRef.current);
             } catch (error) {
-                console.error("Error:", error);
-                setConnectionStatus('error');
-                toast.error("Connection issues", {
-                    description: "Unable to connect to game server"
-                });
+                console.warn("Error removing channel:", error);
             }
+            channelRef.current = null;
         }
 
-        fetchClicksAndSubscribe();
-        return cleanup;
-    }, [user, supabase, processUpdateQueue]);
+        // Clean up reconnect timeout
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+        }
+
+        // Clean up polling interval
+        if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+        }
+    }, [supabase]);
+
+    // Fetch click data
+    const fetchClickData = useCallback(async () => {
+        if (!user?.id) {
+            setClicksData([]);
+            setClickCount(0);
+            return;
+        }
+
+        try {
+            const { data, error } = await supabase
+                .schema('public')
+                .from('clicks')
+                .select('id, qty');
+
+            if (error) throw error;
+
+            setClicksData(data || []);
+            dataFreshness.current = Date.now();
+
+            // Set user's click count if available
+            const userClick = data?.find(click => click.id === user.id);
+            if (userClick) {
+                setClickCount(userClick.qty || 0);
+            }
+
+            return true;
+        } catch (error) {
+            console.error("Error fetching click data:", error);
+            return false;
+        }
+    }, [supabase, user]);
+
+    // Start polling mechanism as a fallback
+    const startPolling = useCallback(() => {
+        // Clear any existing polling interval first
+        if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+        }
+
+        pollingIntervalRef.current = setInterval(() => {
+            if (Date.now() - dataFreshness.current > 3000) {
+                fetchClickData();
+            }
+        }, 3000);
+    }, [fetchClickData]);
+
+    // Setup real-time subscription with exponential backoff reconnection
+    const setupRealtimeSubscription = useCallback(async () => {
+        if (!user?.id) return;
+
+        // Clean up existing resources first
+        cleanupResources();
+
+        // Set status to connecting
+        setConnectionStatus('connecting');
+
+        try {
+            // First, fetch initial data
+            const fetchSuccess = await fetchClickData();
+            if (!fetchSuccess) {
+                throw new Error("Failed to fetch initial data");
+            }
+
+            // Create a channel with proper configuration
+            const channel = supabase
+                .channel('clicker-game', {
+                    config: {
+                        broadcast: { self: true },
+                        presence: { key: '' }
+                    }
+                })
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'clicks' },
+                    (payload) => {
+                        if (payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
+                            updateQueue.current.push(payload.new as ClickRecord);
+                            requestAnimationFrame(processUpdateQueue);
+                        }
+                    }
+                )
+                .subscribe(status => {
+                    console.log(`Subscription status: ${status}`);
+
+                    if (status === 'SUBSCRIBED') {
+                        setConnectionStatus('connected');
+                        reconnectAttempts.current = 0; // Reset reconnect attempts on success
+                    } else if (status === 'CHANNEL_ERROR') {
+                        console.warn('Supabase channel error occurred');
+                        setConnectionStatus('error');
+
+                        // Implement exponential backoff for reconnection
+                        if (reconnectAttempts.current < maxReconnectAttempts) {
+                            const backoffTime = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
+                            console.log(`Attempting to reconnect in ${backoffTime}ms (attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts})`);
+
+                            reconnectTimeoutRef.current = setTimeout(() => {
+                                reconnectAttempts.current++;
+                                setupRealtimeSubscription();
+                            }, backoffTime);
+                        } else {
+                            console.warn(`Max reconnection attempts (${maxReconnectAttempts}) reached, falling back to polling`);
+                            startPolling();
+                        }
+                    } else if (status === 'TIMED_OUT') {
+                        // Handle timeout specifically - this often happens when the server is slow to respond
+                        console.warn('Subscription timed out, attempting to reconnect');
+                        setConnectionStatus('connecting');
+
+                        // Use a shorter timeout for timeouts vs errors
+                        reconnectTimeoutRef.current = setTimeout(() => {
+                            setupRealtimeSubscription();
+                        }, 2000);
+                    }
+                });
+
+            // Store the channel reference
+            channelRef.current = channel;
+
+        } catch (error) {
+            console.error("Error setting up real-time subscription:", error);
+            setConnectionStatus('error');
+            startPolling(); // Start polling as fallback
+        }
+    }, [user, supabase, fetchClickData, startPolling, cleanupResources, processUpdateQueue]);
+
+    // Set up real-time subscription
+    useEffect(() => {
+        // Only setup subscription if we have a user
+        if (user?.id) {
+            setupRealtimeSubscription();
+        }
+
+        // Cleanup function
+        return cleanupResources;
+    }, [user, setupRealtimeSubscription, cleanupResources]);
 
     // Process scores to create ranked player list
     useEffect(() => {
@@ -237,7 +319,7 @@ export function useClickerGame() {
                     clickMap.set(click.id, click.qty || 0);
                 });
 
-                // Update current user's click count
+                // Update current user's click count if available
                 if (user?.id) {
                     const userClicks = clickMap.get(user.id) || 0;
                     setClickCount(userClicks);
