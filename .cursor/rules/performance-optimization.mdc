@@ -1,0 +1,625 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Performance Optimization Standards for TypeScript
+
+This document outlines coding standards and best practices specifically for performance optimization in TypeScript projects. Adhering to these guidelines will improve the speed, responsiveness, efficient use of resources, and overall user experience of your applications.
+
+## 1. Architectural Considerations for Performance
+
+### 1.1. Code Splitting
+
+**Standard:** Implement code splitting to reduce the initial load time of your application.
+
+**Why:** Loading only the necessary code on initial page load significantly improves the user experience.
+
+**Do This:**
+
+*   Utilize dynamic imports ("import()") to load modules on demand.
+*   Configure your bundler (Webpack, Parcel, Rollup) to create separate chunks for different parts of your application.
+
+**Don't Do This:**
+
+*   Load the entire application code in a single bundle.
+*   Use "require()" statements (CommonJS) in modern TypeScript projects where ES Modules are supported.
+
+**Example:**
+
+"""typescript
+// Before: Loading everything upfront
+import { featureA } from './featureA';
+import { featureB } from './featureB';
+
+// After: Code splitting with dynamic imports
+async function loadFeatureA() {
+  const { featureA } = await import('./featureA');
+  featureA.init();
+}
+
+async function loadFeatureB() {
+  const { featureB } = await import('./featureB');
+  featureB.init();
+}
+
+// Use loadFeatureA or loadFeatureB based on user interaction or route
+"""
+
+**Bundler Configuration (Webpack example):**
+
+"""javascript
+// webpack.config.js
+module.exports = {
+  entry: './src/index.ts',
+  output: {
+    filename: '[name].bundle.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+  module: {
+    rules: [
+      {
+        test: /\.tsx?$/,
+        use: 'ts-loader',
+        exclude: /node_modules/,
+      },
+    ],
+  },
+  resolve: {
+    extensions: ['.tsx', '.ts', '.js'],
+  },
+  optimization: {
+    splitChunks: {
+      chunks: 'all', // Split all chunks of code
+    },
+  },
+};
+"""
+
+### 1.2. Lazy Loading Modules
+
+**Standard:** Employ lazy loading for non-critical modules or components.
+
+**Why:** Reduce the amount of code that needs to be parsed and compiled on initial load.
+
+**Do This:**
+
+*   Load components or modules only when they are needed.
+*   Utilize Intersection Observer API to load components when they become visible in the viewport.
+
+**Don't Do This:**
+
+*   Load modules that are not immediately required for the current user interaction.
+
+**Example (Intersection Observer Lazy Loading):**
+
+"""typescript
+function lazyLoadComponent(element: HTMLElement, importPath: string) {
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(async (entry) => {
+      if (entry.isIntersecting) {
+        const { default: Component } = await import(importPath);
+        const componentInstance = new Component(); // Instantiate the component.
+        element.appendChild(componentInstance.render()); // Append to the DOM (adjust according to your framework).
+        observer.unobserve(element);
+      }
+    });
+  });
+  observer.observe(element);
+}
+
+// Usage:
+const lazyComponentElement = document.getElementById('lazy-component');
+
+if (lazyComponentElement) {
+    lazyLoadComponent(lazyComponentElement, './MyHeavyComponent');
+}
+"""
+
+### 1.3. Server-Side Rendering (SSR) or Static Site Generation (SSG)
+
+**Standard:** Consider using SSR or SSG for content-heavy, SEO-sensitive, or performance-critical applications.
+
+**Why:** Reduces the time to first paint (TTFP) and improves SEO by providing crawlers with pre-rendered content.
+
+**Do This:**
+
+*   Evaluate the trade-offs between SSR, SSG, and client-side rendering (CSR) based on your application's needs.  Next.js (React), Nuxt.js (Vue), and Angular Universal are popular frameworks.
+*   Implement appropriate caching strategies for SSR.
+
+**Don't Do This:**
+
+*   Default to CSR when SSR or SSG could provide significant performance benefits.
+
+**Example (Next.js):**
+
+"""typescript
+// pages/index.tsx (Next.js example)
+import React from 'react';
+
+interface Props {
+  data: {
+    title: string;
+    description: string;
+  };
+}
+
+const HomePage: React.FC<Props> = ({ data }) => {
+  return (
+    <div>
+      <h1>{data.title}</h1>
+      <p>{data.description}</p>
+    </div>
+  );
+};
+
+export async function getServerSideProps() {
+  // Fetch data from an API, database, or file system.
+  const data = {
+    title: 'My Awesome Website',
+    description: 'Welcome to my extremely performant website!',
+  };
+
+  return {
+    props: {
+      data,
+    },
+  };
+}
+
+export default HomePage;
+"""
+
+### 1.4. Choosing appropriate data structures.
+**Standard:** Select the best data structure for the job.
+
+**Why:** Using appropriate data structures will reduce the complexity and improve the execution speed of algorithms.
+
+**Do This:**
+
+*   Use "Map" when you need to associate keys with values, *especially when the keys are not strings or numbers*.
+*   Use "Set" when you need to store a collection of unique values.
+*   Use "Record<string, any>" for simple key/value storage with string keys.
+*   Use arrays for storing ordered lists when random access is important.
+*   Use typed arrays ("Uint8Array", "Int32Array", etc.) for handling binary data.
+
+**Don't Do This:**
+
+*   Use objects as maps when keys might not be strings.
+*   Use arrays to check for uniqueness when "Set" is more appropriate.
+*   Use nested loops when a "Map" or "Set" could optimize the search.
+
+**Example:**
+"""typescript
+// Use Map when keys might be objects
+
+const userMap = new Map<User, string>(); //User is an object
+const userA = { id: 1 };
+const userB = { id: 2 };
+
+userMap.set(userA, "User A");
+userMap.set(userB, "User B");
+
+console.log(userMap.get(userA)); //User A
+
+"""
+
+## 2. Code-Level Optimizations
+
+### 2.1. Immutability
+
+**Standard:** Favor immutable data structures and operations where possible.
+
+**Why:** Immutability simplifies reasoning about code, prevents unintended side effects, and can enable performance optimizations like memoization.
+
+**Do This:**
+
+*   Use "const" for variables that should not be reassigned.
+*   Use immutable data structures provided by libraries like Immutable.js or Immer.
+*   Avoid mutating arrays directly; use methods like "map", "filter", and "reduce" that return new arrays.
+
+**Don't Do This:**
+
+*   Mutate objects or arrays directly without considering the consequences.
+
+**Example (Immer):**
+
+"""typescript
+import { produce } from 'immer';
+
+interface State {
+  items: { id: number; value: string }[];
+}
+
+const baseState: State = {
+  items: [
+    { id: 1, value: 'initial' },
+    { id: 2, value: 'initial' },
+  ],
+};
+
+const nextState = produce(baseState, (draft) => {
+  draft.items[1].value = 'updated';
+});
+
+console.log(baseState.items[1].value); // "initial"
+console.log(nextState.items[1].value);  // "updated"
+console.log(baseState === nextState);     // false (new object created)
+"""
+
+### 2.2. Memoization
+
+**Standard:** Utilize memoization to cache the results of expensive function calls.
+
+**Why:** Avoid redundant computations by storing and reusing results.
+
+**Do This:**
+
+*   Use memoization techniques for pure functions (functions that always return the same output for the same input and have no side effects).
+*   Libraries like "lodash.memoize" or custom implementations.
+
+**Don't Do This:**
+
+*   Memoize functions with side effects or functions that rely on external state.
+
+**Example (Memoization with a Custom Function):**
+
+"""typescript
+function memoize<T extends (...args: any[]) => any>(func: T): T {
+  const cache = new Map();
+
+  return function (...args: Parameters<T>): ReturnType<T> {
+    const key = JSON.stringify(args); // Consider a more robust key generation.
+
+    if (cache.has(key)) {
+      return cache.get(key);
+    }
+
+    const result = func(...args);
+    cache.set(key, result);
+    return result;
+  } as T;
+}
+
+function expensiveCalculation(n: number): number {
+  console.log('Calculating...'); // This will only be logged the first time with a given input.
+  let result = 0;
+  for (let i = 0; i < n; i++) {
+    result += i;
+  }
+  return result;
+}
+
+const memoizedCalculation = memoize(expensiveCalculation);
+
+console.log(memoizedCalculation(1000)); // Calculates and logs
+console.log(memoizedCalculation(1000)); // Returns cached result
+console.log(memoizedCalculation(2000)); // Calculates and logs, different input
+"""
+
+### 2.3. Loop Optimization
+
+**Standard:** Optimize loops to minimize unnecessary iterations and computations.
+
+**Why:** Loops are often performance bottlenecks, and even small improvements can have a significant impact.
+
+**Do This:**
+
+*   Cache array lengths outside the loop if the length is used multiple times.
+*   Avoid unnecessary operations inside the loop.
+*   Use "for...of" for iterating over arrays when the index is not needed.
+*   Consider using "Array.forEach", "Array.map", "Array.filter", and "Array.reduce" with caution, understanding their performance implications compared to traditional loops. For very large datasets, traditional loops might be faster.
+
+**Don't Do This:**
+
+*   Perform DOM manipulations inside loops; batch updates instead.
+*   Use "for...in" for iterating over arrays; it's designed for object properties.
+
+**Example:**
+
+"""typescript
+// Before: Inefficient loop
+const myArray = new Array(1000).fill(0);
+for (let i = 0; i < myArray.length; i++) {
+  console.log(myArray.length); // Accessing length in each iteration
+}
+
+// After: Optimized loop
+const myArray2 = new Array(1000).fill(0);
+const arrayLength = myArray2.length; // Cache the length
+for (let i = 0; i < arrayLength; i++) {
+  // Perform operations using 'i'
+}
+
+//Using "for...of" when the index is not needed.
+const myArray3 = ['a','b','c'];
+for(const item of myArray3){
+    console.log(item);
+}
+"""
+
+### 2.4. Object Creation
+
+**Standard:** Re-use objects when possible to reduce garbage collection overhead.
+
+**Why:** Frequent object creation and destruction can lead to memory fragmentation and increased garbage collection times
+
+**Do This:**
+
+*   Use object pools for frequently created and destroyed objects.
+*   Avoid creating temporary objects within frequently called functions.
+
+**Don't Do This:**
+
+*   Create new objects unnecessarily within loops or frequently called functions.
+
+**Example (Object Pool):**
+
+"""typescript
+class ReusableObject {
+  // Object Properties
+  public id:number;
+  constructor(id:number){
+    this.id = id;
+  }
+  reset() {
+    // Reset object properties to a default state
+    this.id = 0;
+  }
+}
+
+class ObjectPool {
+  private pool: ReusableObject[] = [];
+  private maxSize: number;
+  private nextId:number = 1;
+
+  constructor(maxSize: number) {
+    this.maxSize = maxSize;
+    this.initialize();
+  }
+
+  private initialize(): void {
+    for (let i = 0; i < this.maxSize; i++) {
+      this.pool.push(new ReusableObject(this.getNextId()));
+    }
+  }
+
+  public getNextId():number{
+    return this.nextId++;
+  }
+
+  public acquire(): ReusableObject | undefined {
+    if (this.pool.length > 0) {
+      return this.pool.pop();
+    }
+    return undefined; // Or consider expanding the pool if necessary
+  }
+
+  public release(obj: ReusableObject): void {
+    obj.reset(); // Reset the object before returning it to the pool
+    this.pool.push(obj);
+  }
+}
+
+// Usage
+const pool = new ObjectPool(10); // Create a pool of 10 reusable objects
+
+// Acquire an object from the pool
+const obj1 = pool.acquire();
+if (obj1) {
+  console.log("Acquired object with ID:", obj1.id);
+  // Use the object
+  // When done, release the object back into the pool
+  pool.release(obj1);
+}
+
+const obj2 = pool.acquire();
+if (obj2) {
+   console.log("Acquired object with ID:", obj2.id);
+   pool.release(obj2);
+}
+"""
+
+### 2.5. String Concatenation
+
+**Standard:** Use template literals or array joining for efficient string concatenation.
+
+**Why:**  Repeatedly concatenating strings with the "+" operator can be inefficient, especially in loops, because strings in JavaScript are immutable and each concatenation creates a new string object.
+
+**Do This:**
+
+*   Use template literals ("" "...${variable}..." "") for simple concatenations.
+*   Use "Array.join('')" for building strings from multiple parts, especially within loops.
+
+**Don't Do This:**
+
+*   Use the "+" operator for repeated string concatenations in performance-critical sections.
+
+**Example:**
+
+"""typescript
+// Before: Inefficient string concatenation
+let myString = '';
+for (let i = 0; i < 1000; i++) {
+  myString += i.toString(); // Creates a new string in each iteration
+}
+
+// After: Efficient string concatenation with array joining
+const stringParts: string[] = [];
+for (let i = 0; i < 1000; i++) {
+  stringParts.push(i.toString());
+}
+const myString2 = stringParts.join('');
+
+//After: Efficient string concatenation with template literal
+const name = "John";
+const greeting = "Hello, ${name}!"; // More readable and often more efficient for simple cases.
+
+"""
+
+### 2.6. Type Annotations
+
+**Standard:** Employ type annotations strategically to help the compiler optimize code.
+
+**Why:** Explicit types give the compiler more information, allowing it to perform better optimizations
+
+**Do This:**
+
+*   Use type annotations, especially for complex data structures and function signatures.
+*   Use specific types instead of "any" when possible.
+
+**Don't Do This:**
+
+*   Overuse "any" and let the compiler infer types when explicit annotations can provide more information.
+
+**Example:**
+
+"""typescript
+// Before: Implicit type
+const data = [1, 2, 3]; // Inferred type: number[]
+
+// After: Explicit type annotation
+const data2: number[] = [1, 2, 3]; // More explicit, can aid compiler optimizations
+
+// Before: any is used and can't be optimized
+function processData(input: any): any {
+  return input * 2;
+}
+// After: Type annotation allows  optimization.
+function AddFive(input: number): number {
+  return input + 5;
+}
+
+"""
+
+## 3. Tooling and Libraries
+
+### 3.1. Profiling Tools
+
+**Standard:** Regularly profile your application to identify performance bottlenecks.
+
+**Why:** Profiling provides insights into where your application is spending its time.
+
+**Do This:**
+
+*   Use browser developer tools (Chrome DevTools, Firefox Developer Tools) to profile JavaScript execution, memory usage, and rendering performance.
+*   Use Node.js profiling tools (e.g., "node --inspect") for server-side applications.
+*   Consider using dedicated profiling libraries.
+
+**Don't Do This:**
+
+*   Rely solely on guesswork; always profile to confirm suspected performance issues.
+
+### 3.2. Bundler Optimization
+
+**Standard:** Configure your bundler to optimize the output bundle size and loading performance.
+
+**Why:** Bundlers can significantly impact the performance of your application based on how they are configured.
+
+**Do This:**
+
+*   Enable minification and tree shaking in your bundler configuration.
+*   Use code splitting to reduce the initial load time.
+*   Configure asset caching with appropriate cache headers.
+*   Use modern module formats (ESM) to enable more efficient tree shaking.
+
+**Don't Do This:**
+
+*   Use development builds in production.
+*   Include unnecessary dependencies in the final bundle.
+
+## 4. Security Considerations that impact Performance
+
+### 4.1. Input Validations and Sanitization
+
+**Standard:** Always validate and sanitize user inputs to prevent security vulnerabilities, and do this while minimizing performance impact.
+
+**Why:** While primarily a security practice, neglecting input sanitization can lead to performance-heavy attacks like regular expression denial-of-service (ReDoS).
+
+**Do This:**
+
+*   Use efficient and well-tested libraries for input validation and sanitization.
+*   Implement server-side validation even if client-side validation is present.
+*   Use parameterized queries or prepared statements to prevent SQL injection.
+*   Use allow-lists instead of block-lists for input validation where possible.
+
+**Don't Do This:**
+
+*   Trust user inputs without validation.
+*   Use overly complex regular expressions that could be exploited for ReDoS attacks. Doing so makes your application slower and open to security flaws.
+
+**Example:**
+
+"""typescript
+// Using a validation library to sanitize input
+
+import * as validator from 'validator';
+
+function sanitizeInput(input: string): string {
+  if (typeof(input) !== 'string'){
+    return '';
+  }
+  const trimmedInput = input.trim(); // Trim whitespace
+
+  if (trimmedInput.length === 0){
+    return '';
+  }
+  //Use a library to escape the characters or words from the input string
+  const sanitizedInput = validator.escape(trimmedInput);
+
+  return sanitizedInput;
+
+}
+
+const userInput = '<script>alert("evil");</script>Hello!';
+const sanitizedValue = sanitizeInput(userInput);  //The string is now safe to display
+interface MyFormValues{
+  description:string
+}
+
+function submitForm(values:MyFormValues){
+  //You can now submit this form to ths server
+  console.log(values.description)
+}
+
+submitForm({description:sanitizedValue})
+
+"""
+
+### 4.2. Rate Limiting.
+
+**Standard:** Implement rate limiting to protect against brute-force attacks and denial-of-service (DoS) attacks.
+
+**Why:**  Limiting the number of requests from a single user or IP address within a specific time frame prevents malicious actors from overwhelming your server.
+
+**Do This:**
+
+*   Use a rate-limiting middleware in your API endpoints.
+*   Configure reasonable limits based on the expected usage patterns.
+*   Return appropriate HTTP status codes (e.g., 429 Too Many Requests) when limits are exceeded.
+*   Consider using a distributed rate-limiting system for scaled applications.
+
+**Don't Do This:**
+
+*   Expose APIs without rate limiting.
+*   Set overly restrictive limits that impact legitimate users.
+
+### 4.3. Secure Coding Practices
+
+**Standard:** Adhere to secure coding principles to minimize vulnerabilities that could be exploited for performance-degrading attacks.
+
+**Why:** Well-written code has fewer bugs, fewer vulnerabilities, and can be optimized.
+
+**Do This:**
+
+*   Follow the principle of least privilege.
+*   Handle errors gracefully and avoid exposing sensitive information in error messages.
+*   Keep dependencies up to date to patch security vulnerabilities.
+*    Use a linter and static analysis tools to catch potential security issues.
+
+**Don't Do This:**
+
+*   Hardcode credentials or API keys in the code.
+*   Ignore warnings from linters or static analysis tools.
+
+By adhering to these standards, you can create robust TypeScript applications that are not only performant but also secure and maintainable. Regular code reviews and profiling will help ensure that your code continues to meet these standards as your application evolves.

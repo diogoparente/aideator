@@ -1,0 +1,582 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# API Integration Standards for Next.js
+
+This document outlines the coding standards for API integration in Next.js applications. It aims to provide a comprehensive guide for developers to ensure maintainable, performant, and secure integration with backend services and external APIs. These guidelines are intended to be used by both human developers and AI coding assistants.
+
+## 1. Architecture and Design
+
+### 1.1. Layered Architecture
+
+**Standard:** Implement a layered architecture that separates the presentation layer (Next.js components) from the data access layer (API integration logic).
+
+*   **Do This:** Create dedicated modules or directories for API clients and data fetching logic.
+*   **Don't Do This:** Directly call APIs within your React components.
+
+**Why:** This promotes separation of concerns, making your code more testable, maintainable, and easier to reason about. It allows you to change the API implementation without affecting the UI components.
+
+**Code Example:**
+
+"""javascript
+// src/lib/api-client.js
+// Using Next.js 14 Fetch API w/ automatic deduplication and caching
+export const getPosts = async () => {
+  const res = await fetch('https://your-api.com/posts', { next: { revalidate: 60 } }); // Revalidate every 60 seconds
+
+  if (!res.ok) {
+    throw new Error('Failed to fetch data');
+  }
+
+  return res.json();
+};
+
+export const createPost = async (data) => {
+  const res = await fetch('https://your-api.com/posts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to create post');
+  }
+
+  return res.json();
+};
+
+"""
+
+"""javascript
+// src/app/page.js
+import { getPosts } from '@/lib/api-client';
+
+async function HomePage() {
+  const posts = await getPosts();
+
+  return (
+    <div>
+      <h1>Posts</h1>
+      <ul>
+        {posts.map((post) => (
+          <li key={post.id}>{post.title}</li>
+        ))}
+    </div>
+  );
+}
+
+export default HomePage;
+"""
+
+### 1.2. API Abstraction
+
+**Standard:** Abstract API endpoints into reusable functions or classes.
+
+*   **Do This:** Create dedicated API services for each external resource.
+*   **Don't Do This:** Repeat API calls throughout the codebase.
+
+**Why:**
+Abstraction allows reusability, central error handling, and easy swapping of underlying API implementations without affecting the whole application.
+
+**Code Example:**
+
+"""javascript
+// src/lib/post-service.js
+import { getPosts, createPost } from './api-client'; // Assuming you have createdPosts and getPosts in api-client
+
+export const fetchPosts = async () => {
+  try {
+    const posts = await getPosts();
+    return posts;
+  } catch (error) {
+    console.error("Error fetching posts:", error);
+    return []; // or throw error depending on your use case
+  }
+};
+
+export const addPost = async (postData) => {
+  try {
+      const newPost = await createPost(postData);
+      return newPost;
+  } catch (error) {
+      console.error("Error creating post:", error);
+      return null; // or throw error
+  }
+};
+"""
+
+### 1.3. Environment Variables
+
+**Standard:** Use environment variables to store API keys, secrets, and endpoint URLs.
+
+*   **Do This:** Utilize ".env.local" for local development and environment-specific variables for production (managed by your hosting provider). Use "process.env" to access environment variables. Validate on application boot.
+*   **Don't Do This:** Hardcode API keys or secrets directly in your code.
+
+**Why:** Security. Avoids exposing sensitive information. Configuration can be tailored to distinct environments without modifying code. This is extremely critical.
+
+**Code Example:**
+
+"""javascript
+// next.config.js
+require('dotenv').config();
+
+module.exports = {
+  env: {
+    API_BASE_URL: process.env.API_BASE_URL,
+    API_KEY: process.env.API_KEY,
+
+  },
+};
+"""
+
+"""javascript
+// src/lib/api-client.js
+const API_BASE_URL = process.env.API_BASE_URL;
+const API_KEY = process.env.API_KEY;
+
+export const getPosts = async () => {
+  const res = await fetch("${API_BASE_URL}/posts?apiKey=${API_KEY}", { next: { revalidate: 60 } });
+
+  if (!res.ok) {
+    throw new Error('Failed to fetch data');
+  }
+
+  return res.json();
+};
+"""
+
+## 2. Data Fetching
+
+### 2.1. "fetch" API with Next.js extensions
+
+**Standard:** Use Next.js's extended "fetch" API for data fetching in Server Components. leverage caching, deduplication and revalidation features.
+
+*   **Do This:** Utilize "fetch" with "next: { revalidate: <seconds> }" for server-side data caching.  Use the "cache: 'no-store'" option when necessary to bypass the cache. Use "tags" for on-demand invalidation. Use the "useSearchParams" hook to access querystring parameters in server components.
+*   **Don't Do This:** Use "useEffect" with "useState" for fetching data on the server-side.
+
+**Why:** Using Server Components reduces client-side JavaScript, improves performance and provides more flexibility to optimize data fetching strategies. "fetch" integration by Next.js provides automatic memoization and deduplication of requests, optimizing network efficiency.
+
+**Code Example:**
+
+"""javascript
+// src/app/posts/page.js
+import { getPosts } from '@/lib/api-client';
+
+export default async function PostsPage() {
+  const posts = await getPosts();  // Uses fetch with Next.js extensions
+
+  return (
+    <div>
+      <h1>Posts</h1>
+      <ul>
+        {posts.map((post) => (
+          <li key={post.id}>{post.title}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+"""
+
+### 2.2. Data Mutations
+
+**Standard:** Implement data mutations (POST, PUT, DELETE) via Server Actions to manage state and trigger revalidations.
+
+*   **Do This:** Use Server Actions to handle form submissions and API calls that modify data.
+*   **Don't Do This:** Execute mutations on the client-side if you can execute on the server-side.
+
+**Why:** Server Actions provide a secure and efficient way to perform data mutations directly on the server, minimizing client-side JavaScript and improving performance.  They also integrate well with Next.js revalidation mechanisms.
+
+**Code Example:**
+
+"""javascript
+// src/app/actions.js
+'use server'
+
+import { revalidatePath } from 'next/cache'
+
+export async function createPost(formData) {
+  // Validate FormData
+  const title = formData.get('title')
+  const content = formData.get('content')
+
+  if (!title || !content) {
+    throw new Error('Title and content are required')
+  }
+
+  // Call your createPost API endpoint
+  const res = await fetch('https://your-api.com/posts', {
+    method: 'POST',
+    body: JSON.stringify({ title, content }),
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+
+  if (!res.ok) {
+    throw new Error('Failed to create post')
+  }
+
+  // Revalidate the posts page
+  revalidatePath('/posts')
+}
+"""
+
+"""javascript
+// src/app/posts/page.js
+
+import { createPost } from '@/app/actions';
+
+export default function CreatePostForm() {
+  return (
+    <form action={createPost}>
+      <label htmlFor="title">Title:</label>
+      <input type="text" id="title" name="title" required />
+
+      <label htmlFor="content">Content:</label>
+      <textarea id="content" name="content" required />
+
+      <button type="submit">Create Post</button>
+    </form>
+  );
+}
+
+"""
+
+### 2.3. Error Handling
+
+**Standard**: Provide clear and informative error messages to the user for API related issues.
+
+*   **Do This:** Implement try-catch blocks in API client functions and Server Actions to handle potential errors. Create user-friendly error messages based on error types. Use Next.js's error boundary component for global error handling.
+*   **Don't Do This:** Directly expose raw error messages from the API to the client. Leave unhandled exceptions in your code.
+
+**Why:** Shows transparency and avoids confusing the user. Hides sensitive information.
+
+**Code Example:**
+
+"""javascript
+// src/lib/api-client.js
+export const getPosts = async () => {
+  try {
+    const res = await fetch('https://your-api.com/posts');
+    if (!res.ok) {
+      throw new Error("Failed to fetch posts: ${res.status} ${res.statusText}");
+    }
+    return res.json();
+  } catch (error) {
+    console.error("Error fetching posts:", error);
+    throw new Error("Failed to fetch posts. Please try again later.");
+  }
+};
+"""
+
+"""javascript
+// src/app/posts/page.js
+import { getPosts } from '@/lib/api-client';
+
+async function PostsPage() {
+  try {
+    const posts = await getPosts();
+    return (
+      <div>
+        <h1>Posts</h1>
+        <ul>
+          {posts.map((post) => (
+            <li key={post.id}>{post.title}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  } catch (error) {
+    console.error("Error in PostsPage:", error);
+    return (
+      <div>
+        <h1>Error</h1>
+        <p>{error.message}</p>
+      </div>
+    );
+  }
+}
+
+
+export default PostsPage;
+"""
+
+### 2.4. Loading States
+
+**Standard:** Show loading indicators while data is fetched from the API.
+
+*   **Do This:** Use Suspense from React in Server Components to handle loading states elegantly. Or, use conditional rendering based on a loading state variable in Client Components.
+*   **Don't Do This:** Leave the user with a blank screen while waiting for data.
+
+**Why:** Improves user experience by giving feedback.  Using Suspense avoids race conditions in rendering.
+
+**Code Example (Server Component with Suspense):**
+
+"""javascript
+// src/app/posts/page.js
+import { getPosts } from '@/lib/api-client';
+import { Suspense } from 'react';
+
+async function Posts() {
+  const posts = await getPosts();
+    return (
+        <ul>
+            {posts.map((post) => (
+                <li key={post.id}>{post.title}</li>
+            ))}
+        </ul>
+    )
+}
+
+export default function PostsPage() {
+  return (
+    <div>
+      <h1>Posts</h1>
+      <Suspense fallback={<p>Loading posts...</p>}>
+        <Posts />
+      </Suspense>
+    </div>
+  );
+}
+"""
+
+## 3. API Client Implementation
+
+### 3.1. HTTP Client Libraries
+
+**Standard:** Use built-in "fetch" or libraries like "axios" only when necessary but favor built-in "fetch" since it is available in both server and client runtime.
+
+*   **Do This:** Utilize "fetch" API for standard API requests.  Use "axios" if features like request cancellation or interceptors are genuinely needed.
+*   **Don't Do This:** Add unnecessary dependencies by using "axios" for simple API requests.
+
+**Why:** Using the built-in "fetch" API minimizes the number of external dependencies, reducing bundle size and project complexity.  "axios" adds significant overhead if not needed..
+
+### 3.2. Request Headers
+
+**Standard:** Set appropriate request headers, including "Content-Type", "Authorization", and custom headers when required.
+
+*   **Do This:** Set "Content-Type: application/json" for JSON payloads. Use "Authorization: Bearer <token>" for authentication, store tokens securely using cookies or local storage (with caution against XSS vulnerability).
+
+*   **Don't Do This:**  Include sensitive information in request URLs if not absolutely necessary.
+
+**Code Example:**
+
+"""javascript
+// src/lib/api-client.js
+
+const API_BASE_URL = process.env.API_BASE_URL;
+
+export const createPost = async (data, token) => {
+  const res = await fetch("${API_BASE_URL}/posts", {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': "Bearer ${token}",  //Securely sourced token
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    throw new Error('Failed to create post');
+  }
+
+  return res.json();
+};
+
+"""
+
+### 3.3. Response Handling
+
+**Standard:** Handle API responses correctly, including status codes, headers, and data parsing.
+
+*   **Do This:** Check the "res.ok" property of the response to ensure the request was successful. Parse the response body using "res.json()" for JSON APIs. Implement retry policies for transient failures. Handle different HTTP status codes (2xx, 4xx, 5xx) appropriately.
+*   **Don't Do This:** Assume all API calls are successful without checking the response status. Ignore error responses from the API.
+
+**Code Example:**
+
+"""javascript
+// src/lib/api-client.js
+
+const API_BASE_URL = process.env.API_BASE_URL;
+
+export const getPosts = async () => {
+  const res = await fetch("${API_BASE_URL}/posts", {
+    next: { revalidate: 60 },
+  });
+
+  if (!res.ok) {
+    console.error("API Error: ${res.status} - ${res.statusText}");
+    throw new Error('Failed to fetch data.  Please check the API.');
+  }
+
+  try {
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.error("Error parsing JSON:", error);
+    throw new Error("Failed to parse API response.");
+  }
+
+};
+
+"""
+
+## 4. Security
+
+### 4.1. Preventing XSS
+
+**Standard**: Sanitize all user inputs before sending them to the API.
+
+*   **Do This:** Use libraries like DOMPurify to sanitize HTML content before sending it to the API.
+*   **Don't Do This:** Directly send user-provided data to the API without any sanitation.
+
+**Why:** Prevents malicious scripts from being injected into the API and subsequently executed on other users' browsers.
+
+### 4.2. Rate Limiting
+
+**Standard**: Implement rate limiting to protect your API from abuse.
+
+*   **Do This:** Utilize serverless functions ("app/api" routes in Next.js) in combination with rate limiting libraries like "iron-session" or "upstash" to protect your APIs from abuse. Implement rate limiting on specific routes that are prone to abuse.
+*   **Don't Do This:** Expose your API without any rate-limiting measures.
+
+**Why:** Prevents denial-of-service attacks and protects your infrastructure from overload.
+
+### 4.3. Input Validation
+
+**Standard:** Validate all input data on both the client-side and server-side before sending it to the API.
+
+*   **Do This:** Use libraries like Zod, Yup, or Joi to define schemas for your API requests. Verify the data on the client before sending, and re-validate on the server for security.
+*   **Don't Do This:** Trust client-side validation alone.
+
+**Why:** Prevents invalid data from reaching your API and causing unexpected errors. Reduces the chance of injection attacks.
+
+## 5. Performance Optimization
+
+### 5.1. Caching
+
+**Standard:** Implement caching for API responses to reduce latency and server load.
+
+*   **Do This:** Use Next.js's built-in "fetch" caching (with "next: { revalidate: }") for server-side data fetching. Utilize a CDN for static assets and API responses. Implement client-side caching using libraries like "swr" or "react-query" for frequently accessed data. Consider using the "stale-while-revalidate" caching strategy.
+*   **Don't Do This:** Disable caching altogether. Cache sensitive data without proper safeguards.
+
+**Why:** Significantly improves app performance and responsiveness. Reduces the load on the API server, leading to cost savings.
+
+### 5.2. Pagination
+
+**Standard:** Implement pagination for API endpoints that return large datasets.
+
+*   **Do This:**  Use offset-based or cursor-based pagination techniques. Use the "Link" header in the API response to provide links to the next and previous pages.
+*   **Don't Do This:** Return all data at once without pagination.
+
+**Why:** Prevents the transfer of unnecessarily large datasets, improving performance.
+
+### 5.3. Compression
+
+**Standard:** Enable compression (e.g., gzip or Brotli) for API responses.
+
+*   **Do This:** Configure your API server to compress responses.
+*   **Don't Do This:** Neglect compression, resulting in larger data transfer sizes.
+
+**Why:** Reduces the size of data transferred, improving load times.
+
+## 6. Testing
+
+### 6.1. Unit Testing
+
+**Standard:** Write unit tests for API client functions to ensure they correctly interact with the API.
+
+*   **Do This:** Use testing frameworks like Jest and testing libraries like "msw" (Mock Service Worker) to mock API responses. Test different scenarios, including success, error, and edge cases.
+*   **Don't Do This:** Skip unit testing for API integration. Rely solely on end-to-end tests.
+
+**Why:** Provides confidence that API client functions are working as expected. Catches errors early in the development process.
+
+**Code Example:**
+
+"""javascript
+// src/lib/api-client.test.js
+import { getPosts } from './api-client';
+import { rest } from 'msw';
+import { setupServer } from 'msw/node';
+
+const mockPosts = [
+  { id: 1, title: 'Post 1' },
+  { id: 2, title: 'Post 2' },
+];
+
+const server = setupServer(
+  rest.get('https://your-api.com/posts', (req, res, ctx) => {
+    return res(ctx.json(mockPosts));
+  })
+);
+
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+
+describe('getPosts', () => {
+  it('should return an array of posts', async () => {
+    const posts = await getPosts();
+    expect(posts).toEqual(mockPosts);
+  });
+
+  it('should handle errors when fetching posts', async () => {
+    server.use(
+      rest.get('https://your-api.com/posts', (req, res, ctx) => {
+        return res(ctx.status(500));
+      })
+    );
+
+    await expect(getPosts()).rejects.toThrow('Failed to fetch data');
+
+    });
+  });
+
+"""
+
+### 6.2. End-to-End Testing
+
+**Standard:** Write end-to-end tests to verify the entire API integration flow, including frontend components and backend services.
+
+*   **Do This:** Use testing frameworks like Cypress or Playwright to simulate user interactions and verify the behavior of the application. Test different scenarios, including success, error, and edge cases.
+*   **Don't Do This:** Skip end-to-end testing. Rely solely on unit tests.
+
+**Why:** Verifies that the entire system is working correctly. Catches integration issues that might not be caught by unit tests.
+
+## 7. Documentation
+
+### 7.1. API Client Documentation
+
+**Standard:** Document all API client functions, including their purpose, parameters, return values, and potential errors.
+
+*   **Do This:** Use JSDoc or similar documentation generators to generate API documentation.
+*   **Don't Do This:** Skip API client documentation.
+
+**Why:** Makes it easier for other developers to understand and use the API client.
+
+### 7.2. API Endpoint Documentation
+
+**Standard:** Document all API endpoints used in the application, including their purpose, request parameters, response format, and potential errors.
+
+*   **Do This:** Use tools like Swagger / OpenAPI to define and document API endpoints.
+*   **Don't Do This:** Skip API endpoint documentation.
+
+**Why:** Makes it easier for frontend developers to understand and integrate with the API.
+
+## 8. Common Anti-Patterns and Mistakes
+
+*   **Over-fetching:** Fetching more data than is required by the UI. Use GraphQL, or selective field retrieval on the backend to mitigate.
+*   **Under-fetching:** Making multiple API requests to fetch data that could be retrieved in a single request.
+*   **N+1 Problem:** A database query is executed for each item displayed in a list.
+*   **Tight coupling between UI and API:** Making the UI directly dependent on the API's data structure.
+*   **Ignoring error handling:** Not handling API errors gracefully.
+*   **Hardcoding API endpoints and credentials:** Making it difficult to change the API configuration.
+*   **Lack of caching:** Not caching API responses, leading to unnecessary API requests.
+*   **Inadequate testing:** Not writing unit tests and end-to-end tests for API integration.
+
+By following these coding standards, developers can ensure that their Next.js applications have robust, maintainable, performant, and secure API integrations. These guidelines are designed to enhance code quality and promote collaboration within development teams.

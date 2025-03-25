@@ -1,15 +1,25 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { SerializeOptions } from 'cookie'
-import { config, getAuthConfig } from '../config'
+import { CookieOptions } from '@supabase/ssr'
 
-// Define proper cookie option types to match what's expected
-type CookieOptions = Partial<Omit<SerializeOptions, 'sameSite'> & {
-  sameSite?: 'lax' | 'strict' | 'none';
-}>
+// Config object for environment settings
+const config = {
+  isProduction: process.env.NODE_ENV === 'production',
+  supabase: {
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+  }
+}
+
+// Auth configuration function
+function getAuthConfig() {
+  return {
+    cookieDomain: process.env.COOKIE_DOMAIN || undefined
+  }
+}
 
 export async function createClient() {
-  const cookieStore = await cookies()
+  const cookieStore = cookies()
   const authConfig = getAuthConfig()
   const cookieDomain = config.isProduction ? authConfig.cookieDomain : undefined
 
@@ -29,7 +39,7 @@ export async function createClient() {
       path: '/'
     }
   }
-  
+
   return createServerClient(
     config.supabase.url,
     config.supabase.anonKey,
@@ -43,25 +53,22 @@ export async function createClient() {
         debug: false // Explicitly disable debug mode
       },
       cookies: {
-        getAll() {
-          const allCookies = cookieStore.getAll();
-          return allCookies.map(cookie => ({
-            name: cookie.name,
-            value: cookie.value,
-          }));
+        async getAll() {
+          const resolvedCookieStore = await cookieStore
+          return resolvedCookieStore.getAll()
         },
-        setAll(cookies) {
+        async setAll(cookies) {
           try {
+            const resolvedCookieStore = await cookieStore
             cookies.forEach(({ name, value, options = {} }) => {
-              // Cast the options to ensure compatibility
-              const secureOptions = secureCookieOptions(options as CookieOptions);
-              cookieStore.set(name, value, secureOptions);
-            });
+              const secureOptions = secureCookieOptions(options)
+              resolvedCookieStore.set(name, value, secureOptions)
+            })
           } catch (error) {
-            console.error('Error setting cookies:', error);
+            console.error('Error setting cookies:', error)
           }
         }
       }
     }
-  );
+  )
 }

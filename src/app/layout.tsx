@@ -3,9 +3,11 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { SupabaseProvider } from "@/lib/supabase/provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
-import { Sidebar, SidebarRail } from "@/components/ui/sidebar";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarContent, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ErrorBoundary } from "@/components/error-boundary";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -34,19 +36,26 @@ export default function RootLayout({
       >
         <SupabaseProvider>
           <SidebarProvider>
-            <AppSidebar variant="inset" />
-            <SidebarTrigger />
-            <main>
-              <div className="flex">
-                <div className="w-full">
-                  {children}
+            <TooltipProvider>
+              <ErrorBoundary>
+                <AppSidebar />
+                <SidebarTrigger />
+
+                <div className="w-full max-w-4xl mx-auto mb-8 sm:max-w-6xl sm:mx-auto md:max-w-8xl md:mx-auto lg:max-w-10xl lg:mx-auto">
+                  <div className="flex flex-col h-full">
+                    <SidebarContent>
+                      <main className="flex-1">
+                        {children}
+                      </main>
+                    </SidebarContent>
+                  </div>
                 </div>
-              </div>
-            </main>
-            <Toaster />
+              </ErrorBoundary>
+            </TooltipProvider>
           </SidebarProvider>
+          <Toaster position="top-center" closeButton richColors />
         </SupabaseProvider>
       </body>
-    </html>
+    </html >
   );
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
@@ -9,45 +9,95 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
+import { handleAuthError, handleError } from "@/lib/error-handler"
 
 export function LoginForm({
     className,
     ...props
 }: React.ComponentProps<"div">) {
+    const [isLogin, setIsLogin] = useState(true)
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
+    const [confirmPassword, setConfirmPassword] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const router = useRouter()
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setIsLoading(true)
-        console.log("Login form submitted with email:", email)
+
+        if (!isLogin && password !== confirmPassword) {
+            toast.error("Passwords do not match")
+            setIsLoading(false)
+            return
+        }
 
         try {
             const supabase = createClient()
-            console.log("Attempting to sign in with password")
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            })
 
-            console.log("Sign in response:", { user: data.user ? "User exists" : "No user", error })
+            if (isLogin) {
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email,
+                    password,
+                })
 
-            if (error) {
-                console.error("Sign in error:", error)
-                toast.error(error.message)
-                return
+                if (error) {
+                    if (error.message?.includes("Email not confirmed")) {
+                        toast.error("Email not confirmed. Please check your inbox or request a new confirmation email.")
+                        router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+                        return
+                    }
+                    if (error.message?.includes("Invalid login credentials")) {
+                        toast.error("Invalid email or password. Please try again.")
+                        setIsLoading(false)
+                        return
+                    }
+                    handleError(error)
+                    return
+                }
+
+                toast.success("Logged in successfully")
+            } else {
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        emailRedirectTo: `${window.location.origin}/auth/callback`,
+                    },
+                })
+
+                if (error) {
+                    if (error.message?.includes("email rate limit exceeded")) {
+                        toast.error("Too many sign-up attempts with this email. Please try again later.")
+                        setIsLoading(false)
+                        return
+                    }
+                    handleError(error)
+                    return
+                }
+
+                toast.success("Sign up successful! Please check your email to verify your account.")
             }
 
-            // Successfully logged in
-            console.log("Login successful, session established")
-            toast.success("Logged in successfully")
             router.push("/dashboard")
             router.refresh()
-        } catch (error) {
-            console.error("Login error:", error)
-            toast.error("An unexpected error occurred")
+        } catch (error: any) {
+            if (error.message?.includes("Email not confirmed")) {
+                toast.error("Email not confirmed. Please check your inbox or request a new confirmation email.")
+                router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+                return
+            }
+            if (error.message?.includes("Invalid login credentials")) {
+                toast.error("Invalid email or password. Please try again.")
+                setIsLoading(false)
+                return
+            }
+            if (error.message?.includes("email rate limit exceeded")) {
+                toast.error("Too many sign-up attempts with this email. Please try again later.")
+                setIsLoading(false)
+                return
+            }
+            handleError(error)
         } finally {
             setIsLoading(false)
         }
@@ -66,15 +116,110 @@ export function LoginForm({
             })
 
             if (error) {
-                toast.error(error.message)
+                handleError(error)
             }
-        } catch (error) {
-            console.error("OAuth error:", error)
-            toast.error("An unexpected error occurred")
+        } catch (error: any) {
+            handleError(error)
         } finally {
             setIsLoading(false)
         }
     }
+
+    const toggleMode = () => {
+        setIsLogin(!isLogin)
+        setEmail("")
+        setPassword("")
+        setConfirmPassword("")
+    }
+
+    // Add effect to handle auth session errors on component mount
+    useEffect(() => {
+        // Set up a global error handler for unhandled promise rejections
+        const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+            // Check if it's an auth error
+            if (event.reason?.name === "AuthSessionMissingError") {
+                handleAuthError(event.reason)
+                event.preventDefault() // Prevent the default error from showing in console
+            } else if (event.reason?.name === "AuthApiError" &&
+                event.reason?.message?.includes("Email not confirmed")) {
+                toast.error("Email not confirmed")
+                router.push(`/verify-email?email=${encodeURIComponent(email)}`)
+                event.preventDefault() // Prevent the default error from showing in console
+            }
+        }
+
+        // Add event listener
+        window.addEventListener("unhandledrejection", handleUnhandledRejection)
+
+        // Check for existing auth errors
+        const checkAuthState = async () => {
+            try {
+                const supabase = createClient()
+                const { data: { user } } = await supabase.auth.getUser()
+                if (user) {
+                    // If user is authenticated, check and create profile if needed
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('id')
+                        .eq('id', user.id)
+                        .maybeSingle();
+
+                    if (!profile) {
+                        // Create a profile for the user if one doesn't exist
+                        await supabase.from('profiles').insert([{
+                            id: user.id,
+                            full_name: user.user_metadata?.full_name,
+                            avatar_url: user.user_metadata?.avatar_url,
+                            username: user.user_metadata?.preferred_username || user.user_metadata?.username,
+                            updated_at: new Date().toISOString()
+                        }]);
+                        console.log('Created profile for authenticated user:', user.id);
+                    }
+
+                    router.push("/dashboard")
+                }
+            } catch (error: any) {
+                handleAuthError(error)
+            }
+        }
+
+        // Check for URL parameters for success/error messages
+        const url = new URL(window.location.href)
+        const successParam = url.searchParams.get("success")
+        const errorParam = url.searchParams.get("error")
+
+        if (successParam === "verification_complete") {
+            toast.success("Email verification complete! You can now log in.")
+        } else if (errorParam) {
+            let errorMessage = "An error occurred"
+
+            switch (errorParam) {
+                case "verification_failed":
+                    errorMessage = "Email verification failed. Please try again or request a new verification email."
+                    break
+                case "verification_session_error":
+                    errorMessage = "There was an issue with your session after verification. Please try logging in."
+                    break
+                case "missing_verification_params":
+                    errorMessage = "Missing verification parameters. Please check your email link or request a new one."
+                    break
+                case "auth_callback_failed":
+                    errorMessage = "Authentication callback failed. Please try again."
+                    break
+                default:
+                    errorMessage = `Error: ${errorParam}`
+            }
+
+            toast.error(errorMessage)
+        }
+
+        checkAuthState()
+
+        // Clean up event listener on unmount
+        return () => {
+            window.removeEventListener("unhandledrejection", handleUnhandledRejection)
+        }
+    }, [email, router])
 
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -83,9 +228,13 @@ export function LoginForm({
                     <form className="p-6 md:p-8" onSubmit={handleSubmit}>
                         <div className="flex flex-col gap-6">
                             <div className="flex flex-col items-center text-center">
-                                <h1 className="text-2xl font-bold">Welcome back</h1>
+                                <h1 className="text-2xl font-bold">
+                                    {isLogin ? "Welcome back" : "Create an account"}
+                                </h1>
                                 <p className="text-balance text-muted-foreground">
-                                    Login to your Acme Inc account
+                                    {isLogin
+                                        ? "Login to your Acme Inc account"
+                                        : "Sign up for an Acme Inc account"}
                                 </p>
                             </div>
                             <div className="grid gap-2">
@@ -103,12 +252,14 @@ export function LoginForm({
                             <div className="grid gap-2">
                                 <div className="flex items-center">
                                     <Label htmlFor="password">Password</Label>
-                                    <a
-                                        href="#"
-                                        className="ml-auto text-sm underline-offset-2 hover:underline"
-                                    >
-                                        Forgot your password?
-                                    </a>
+                                    {isLogin && (
+                                        <a
+                                            href="#"
+                                            className="ml-auto text-sm underline-offset-2 hover:underline"
+                                        >
+                                            Forgot your password?
+                                        </a>
+                                    )}
                                 </div>
                                 <Input
                                     id="password"
@@ -119,8 +270,27 @@ export function LoginForm({
                                     disabled={isLoading}
                                 />
                             </div>
+                            {!isLogin && (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="confirmPassword">Confirm Password</Label>
+                                    <Input
+                                        id="confirmPassword"
+                                        type="password"
+                                        required
+                                        value={confirmPassword}
+                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                            )}
                             <Button type="submit" className="w-full" disabled={isLoading}>
-                                {isLoading ? "Logging in..." : "Login"}
+                                {isLoading
+                                    ? isLogin
+                                        ? "Logging in..."
+                                        : "Signing up..."
+                                    : isLogin
+                                        ? "Login"
+                                        : "Sign up"}
                             </Button>
                             <div className="relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
                                 <span className="relative z-10 bg-background px-2 text-muted-foreground">
@@ -141,7 +311,7 @@ export function LoginForm({
                                             fill="currentColor"
                                         />
                                     </svg>
-                                    <span className="sr-only">Login with Apple</span>
+                                    <span className="sr-only">Continue with Apple</span>
                                 </Button>
                                 <Button
                                     type="button"
@@ -156,7 +326,7 @@ export function LoginForm({
                                             fill="currentColor"
                                         />
                                     </svg>
-                                    <span className="sr-only">Login with Google</span>
+                                    <span className="sr-only">Continue with Google</span>
                                 </Button>
                                 <Button
                                     type="button"
@@ -171,14 +341,33 @@ export function LoginForm({
                                             fill="currentColor"
                                         />
                                     </svg>
-                                    <span className="sr-only">Login with Meta</span>
+                                    <span className="sr-only">Continue with Meta</span>
                                 </Button>
                             </div>
                             <div className="text-center text-sm">
-                                Don&apos;t have an account?{" "}
-                                <a href="/register" className="underline underline-offset-4">
-                                    Sign up
-                                </a>
+                                {isLogin ? (
+                                    <>
+                                        Don&apos;t have an account?{" "}
+                                        <button
+                                            type="button"
+                                            onClick={toggleMode}
+                                            className="underline underline-offset-4"
+                                        >
+                                            Sign up
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        Already have an account?{" "}
+                                        <button
+                                            type="button"
+                                            onClick={toggleMode}
+                                            className="underline underline-offset-4"
+                                        >
+                                            Login
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </form>

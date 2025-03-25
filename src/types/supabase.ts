@@ -7,16 +7,6 @@ export type Json =
     | Json[]
 
 export interface Database {
-    appointmint: {
-        Tables: {
-            clicks: {
-                Row: {
-                    id: string
-                    qty: number
-                }
-            }
-        }
-    },
     public: {
         Tables: {
             profiles: {
@@ -46,6 +36,26 @@ export interface Database {
                     avatar_url?: string | null
                     website?: string | null
                     bio?: string | null
+                }
+            },
+            clicks: {
+                Row: {
+                    id: string
+                    user_id: string
+                    qty: number
+                    created_at: string
+                }
+                Insert: {
+                    id: string
+                    user_id: string
+                    qty: number
+                    created_at: string
+                }
+                Update: {
+                    id?: string
+                    user_id?: string
+                    qty?: number
+                    created_at?: string
                 }
             }
         }

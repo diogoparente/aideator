@@ -6,46 +6,96 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+            supabaseResponse = NextResponse.next({
+              request,
+            })
+            cookiesToSet.forEach(({ name, value, options }) =>
+              supabaseResponse.cookies.set(name, value, options)
+            )
+          },
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
-            request,
-          })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
+      }
+    )
+
+    // Do not run code between createServerClient and
+    // supabase.auth.getUser(). A simple mistake could make it very hard to debug
+    // issues with users being randomly logged out.
+
+    // IMPORTANT: DO NOT REMOVE auth.getUser()
+
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
+
+    // If there's an authentication error and user is trying to access a protected route
+    if (
+      error &&
+      error.name === "AuthSessionMissingError" &&
+      !request.nextUrl.pathname.startsWith('/login') &&
+      !request.nextUrl.pathname.startsWith('/auth')
+    ) {
+      // Clear any invalid sessions by redirecting to login page
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+
+      // Create a response with redirected URL
+      const response = NextResponse.redirect(url)
+
+      // Get all cookies and remove session cookies
+      const cookies = request.cookies.getAll()
+      cookies.forEach(cookie => {
+        if (cookie.name.includes('supabase') || cookie.name.includes('auth')) {
+          response.cookies.delete(cookie.name)
+        }
+      })
+
+      return response
     }
-  )
 
-  // Do not run code between createServerClient and
-  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
-  // issues with users being randomly logged out.
+    if (
+      !user &&
+      !request.nextUrl.pathname.startsWith('/login') &&
+      !request.nextUrl.pathname.startsWith('/auth')
+    ) {
+      // no user, potentially respond by redirecting the user to the login page
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
 
-  // IMPORTANT: DO NOT REMOVE auth.getUser()
+  } catch (error: any) {
+    console.error('Middleware error:', error)
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    // If we get an auth error, redirect to login and clear cookies
+    if (error.name === "AuthSessionMissingError") {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
 
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth')
-  ) {
-    // no user, potentially respond by redirecting the user to the login page
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+      // Create a response with redirected URL
+      const response = NextResponse.redirect(url)
+
+      // Get all cookies and remove session cookies
+      const cookies = request.cookies.getAll()
+      cookies.forEach(cookie => {
+        if (cookie.name.includes('supabase') || cookie.name.includes('auth')) {
+          response.cookies.delete(cookie.name)
+        }
+      })
+
+      return response
+    }
   }
 
   // IMPORTANT: You *must* return the supabaseResponse object as it is.

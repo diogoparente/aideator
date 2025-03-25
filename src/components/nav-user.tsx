@@ -9,7 +9,7 @@ import {
 } from "lucide-react"
 import { useCallback, useEffect, useState, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { createClient, getAuthenticatedUser, getUserProfile } from "@/lib/supabase/client"
+import { createClient, getAuthenticatedUser, getUserProfile, createUserProfile } from "@/lib/supabase/client"
 
 import {
   Avatar,
@@ -64,8 +64,8 @@ export function useUser() {
     setLoading(true)
 
     try {
-      // Get authenticated user using the shared helper function
-      const authUser = await getAuthenticatedUser();
+      // Get authenticated user using the shared helper function and ensure profile exists
+      const authUser = await getAuthenticatedUser({ ensureProfile: true });
 
       if (!authUser) {
         setUser(null)
@@ -77,6 +77,7 @@ export function useUser() {
       const profile = await getUserProfile(authUser.id);
 
       if (!profile) {
+        console.log(`No profile found for user ${authUser.id}, using auth data only`);
         // Still create a user object with auth data even if profile is missing
         const userData = {
           id: authUser.id,

@@ -1,0 +1,722 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Security Best Practices Standards for Next.js
+
+This document outlines security best practices for Next.js development. Adhering to these standards will help protect your application against common vulnerabilities, ensure data integrity, and maintain user trust.
+
+## 1. General Security Principles
+
+### 1.1 Data Validation and Sanitization
+
+**Standard:** Always validate and sanitize user input on both the client-side (for immediate feedback) and the server-side (for security).
+
+**Why:** Prevents malicious code injection (e.g., XSS, SQL injection) and ensures data consistency. Server-side validation is crucial because client-side validation can be bypassed.
+
+**Do This:**
+
+*   Use input validation libraries like "zod" or "yup" on the client-side to provide immediate feedback to users.
+*   Implement server-side validation using similar libraries or custom validation logic.
+*   Sanitize data before rendering it or storing it in a database.
+
+**Don't Do This:**
+
+*   Trust user input without validation.
+*   Rely solely on client-side validation.
+*   Store or display data without sanitization.
+
+**Example:**
+
+"""typescript
+// pages/api/submit-form.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import { z } from 'zod';
+
+const schema = z.object({
+  name: z.string().min(3).max(50),
+  email: z.string().email(),
+  message: z.string().min(10),
+});
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method === 'POST') {
+    try {
+      const result = schema.parse(req.body);
+      // Process the validated data
+      console.log('Validated Data:', result);
+      res.status(200).json({ message: 'Form submitted successfully!' });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: error.errors });
+      } else {
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    }
+  } else {
+    res.status(405).json({ error: 'Method Not Allowed' });
+  }
+}
+"""
+
+### 1.2 Output Encoding
+
+**Standard:** Encode data properly when outputting it to the browser and other destinations (e.g., databases, logs).
+
+**Why:** Prevents XSS attacks by ensuring that data is treated as data, not code.  Proper encoding also ensures data integrity and prevents common issues related to character sets and data corruption.
+
+**Do This:**
+
+*   Use appropriate encoding techniques for different output contexts (e.g., HTML encoding for browser display, URL encoding for query parameters).
+*   Leverage Next.js' built-in escaping mechanisms (e.g., when rendering JSX).
+
+**Don't Do This:**
+
+*   Output user-provided data without encoding.
+*   Assume that client-side frameworks automatically handle all encoding needs.
+
+**Example:**
+
+"""jsx
+// components/DisplayMessage.tsx
+import React from 'react';
+
+interface DisplayMessageProps {
+  message: string;
+}
+
+const DisplayMessage: React.FC<DisplayMessageProps> = ({ message }) => {
+  // dangerouslySetInnerHTML should be avoided if possible. In this case,
+  // we are using it to demonstrate the importance of proper encoding.
+  // In a real-world scenario, prefer rendering sanitized values instead.
+  return (
+    <div>
+      <p>{message}</p>
+    </div>
+  );
+};
+
+export default DisplayMessage;
+"""
+
+**Anti-Pattern:**
+
+"""jsx
+// BAD: Vulnerable to XSS
+<div dangerouslySetInnerHTML={{ __html: unencodedMessage }} />
+"""
+
+**Good Pattern:**
+
+"""jsx
+// GOOD: Encoding the message with a library like DOMPurify
+import DOMPurify from 'dompurify';
+
+const DisplayMessage: React.FC<DisplayMessageProps> = ({ message }) => {
+  const cleanMessage = DOMPurify.sanitize(message);
+  return (
+    <div>
+      <p dangerouslySetInnerHTML={{ __html: cleanMessage }} />
+    </div>
+  );
+};
+
+export default DisplayMessage;
+"""
+
+**Note:** While this examples shows sanitization, avoid "dangerouslySetInnerHTML" if at all possible and encode values directly using React instead.
+
+### 1.3 Authentication and Authorization
+
+**Standard:** Implement robust authentication (verifying user identity) and authorization (controlling user access) mechanisms.
+
+**Why:** Prevents unauthorized access to sensitive data and functionality, ensuring that only authorized users can perform specific actions.
+
+**Do This:**
+
+*   Use secure password hashing algorithms (e.g., bcrypt).
+*   Store session tokens securely (e.g., using HTTP-only cookies).
+*   Implement role-based access control (RBAC) to manage user permissions.
+*   Use established authentication providers like NextAuth.js.
+
+**Don't Do This:**
+
+*   Store passwords in plain text.
+*   Use weak or predictable session tokens.
+*   Expose sensitive data without proper authorization checks.
+
+**Example (NextAuth.js):**
+
+"""typescript
+// pages/api/auth/[...nextauth].ts
+import NextAuth from 'next-auth'
+import GithubProvider from 'next-auth/providers/github'
+
+export const authOptions = {
+  providers: [
+    GithubProvider({
+      clientId: process.env.GITHUB_ID,
+      clientSecret: process.env.GITHUB_SECRET,
+    }),
+  ],
+  secret: process.env.NEXTAUTH_SECRET,  //MUST BE SET
+}
+
+export default NextAuth(authOptions)
+"""
+
+"""tsx
+// components/Profile.tsx
+import { useSession, signOut } from "next-auth/react"
+
+export default function Profile() {
+  const { data: session } = useSession()
+
+  if (session) {
+    return (
+      <>
+        Signed in as {session.user.email} <br />
+        <button onClick={() => signOut()}>Sign out</button>
+      </>
+    )
+  }
+  return (
+    <>
+      Not signed in <br />
+      <button onClick={() => signIn()}>Sign in</button>
+    </>
+  )
+}
+"""
+
+### 1.4 Secure Configuration Management
+
+**Standard:** Securely manage application configuration, especially sensitive credentials like API keys and database passwords.
+
+**Why:** Prevents unauthorized access to sensitive information that could be used to compromise the application or its data.
+
+**Do This:**
+
+*   Store sensitive configuration values in environment variables.
+*   Use a secrets management service (e.g., AWS Secrets Manager, HashiCorp Vault) for highly sensitive data.
+*   Never commit sensitive configuration values to version control.
+*   Explicitly define environment variables that are exposed to the browser via "NEXT_PUBLIC_". Only expose what is *necessary*.
+
+**Don't Do This:**
+
+*   Hardcode sensitive configuration values in code.
+*   Store sensitive configuration values in version control.
+*   Expose all environment variables to the client-side.
+
+**Example (Using Environment Variables):**
+
+"""typescript
+// next.config.js
+module.exports = {
+  env: {
+    API_ENDPOINT: process.env.API_ENDPOINT,
+    // NEXT_PUBLIC prefix exposes this variable to the client-side
+    NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
+  },
+};
+
+// .env.local
+API_ENDPOINT=https://api.example.com
+NEXT_PUBLIC_APP_NAME=My Next.js App
+DATABASE_URL=postgres://user:password@host:port/database  # Never checked into version control
+"""
+
+### 1.5 Regular Security Updates
+
+**Standard:** Keep your Next.js dependencies and the Next.js framework itself up-to-date with the latest security patches.
+
+**Why:** Mitigates the risk of vulnerabilities being exploited in outdated libraries and frameworks.
+
+**Do This:**
+
+*   Use a dependency management tool (e.g., npm, yarn, pnpm) to track and update dependencies.
+*   Regularly run security audits on your dependencies using tools like "npm audit" or "yarn audit".
+*   Monitor security advisories for Next.js and its dependencies.
+
+**Don't Do This:**
+
+*   Ignore security alerts from dependency management tools.
+*   Use outdated versions of Next.js or its dependencies.
+*   Fail to update packages regularly.
+
+**Example (Running Security Audit):**
+
+"""bash
+npm audit
+# or
+yarn audit
+"""
+
+### 1.6 Error Handling and Logging
+
+**Standard:** Implement proper error handling and logging mechanisms to detect and respond to security incidents.
+
+**Why:** Provides valuable insights into potential security threats and allows for timely investigation and remediation.
+
+**Do This:**
+
+*   Log significant events, such as authentication attempts, authorization failures, and application errors.
+*   Use a centralized logging system for easier analysis and monitoring.
+*   Implement rate limiting to prevent brute-force attacks.
+*   Do *not* log sensitive data like passwords or API keys.
+
+**Don't Do This:**
+
+*   Expose sensitive information in error messages.
+*   Ignore or suppress errors without proper analysis.
+*   Log sensitive data.
+
+**Example:**
+
+"""typescript
+// pages/api/login.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    // Attempt to authenticate user
+    const user = await authenticateUser(req.body.username, req.body.password);
+
+    if (user) {
+      // Log successful authentication
+      console.log("User ${req.body.username} authenticated successfully.");
+      res.status(200).json({ message: 'Login successful!' });
+    } else {
+      // Log failed authentication attempt
+      console.warn("Failed login attempt for user ${req.body.username}.");
+      res.status(401).json({ error: 'Invalid credentials' });
+    }
+  } catch (error) {
+    // Log unexpected errors
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+"""
+
+## 2. Next.js Specific Security Considerations
+
+### 2.1 API Routes Security
+
+**Standard:** Secure your Next.js API routes with appropriate authentication and authorization checks.
+
+**Why:** API routes are a common target for attackers, so it's crucial to ensure that only authorized users can access them.
+
+**Do This:**
+
+*   Use middleware to protect API routes with authentication and authorization checks.
+*   Validate and sanitize input parameters to prevent injection attacks.
+*   Implement CORS (Cross-Origin Resource Sharing) to control which domains can access your API routes.
+
+**Don't Do This:**
+
+*   Expose sensitive data without proper authentication.
+*   Trust input parameters without validation.
+*   Allow unrestricted CORS access.
+
+**Example (API Route Protection with Middleware):**
+
+"""typescript
+// pages/api/protected-route.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import { withAuth } from '../../middleware/auth';
+
+async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // Your protected API logic here
+  res.status(200).json({ message: 'This is a protected route' });
+}
+
+export default withAuth(handler);
+
+
+// middleware/auth.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import { getSession } from 'next-auth/react';
+
+type NextApiHandler = (req: NextApiRequest, res: NextApiResponse) => Promise<void>;
+
+export const withAuth = (handler: NextApiHandler) => {
+  return async (req: NextApiRequest, res: NextApiResponse) => {
+    const session = await getSession({ req });
+
+    if (!session) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Extend the request object with the session data (optional)
+    (req as any).session = session;
+
+    return handler(req, res);
+  };
+};
+
+"""
+
+### 2.2 CSRF Protection
+
+**Standard:** Implement CSRF (Cross-Site Request Forgery) protection for state-changing operations.  Note: This is more relevant for traditional server-side rendered forms that are submitted.  Modern APIs with "fetch" and authentication headers are typicallymitigated against CSRF attacks.
+
+**Why:** Prevents attackers from tricking users into performing actions on your application without their knowledge.
+
+**Do This:**
+
+*   Use a CSRF token in forms and API requests.
+*   Validate the CSRF token on the server-side.
+*   Use the "same-site" cookie attribute (strict or lax) prevents the browser from sending this cookie along with cross-site requests.
+
+**Don't Do This:**
+
+*   Omit CSRF protection from state-changing forms and API routes.
+
+**Example (CSRF Protection with "csrf-sync"):**
+
+"""typescript
+// pages/api/form-submit.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import csrf from 'csrf-sync'
+
+const { generateToken, verifyToken, getTokenName } = csrf()
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method === 'POST') {
+    const csrfTokenHeader = req.headers['csrf-token'] as string
+    const csrfTokenBody = req.body._csrf as string;
+
+    if (!csrfTokenHeader || !csrfTokenBody || csrfTokenHeader !== csrfTokenBody) {
+      return res.status(400).json({ message: 'Invalid CSRF token' })
+    }
+
+    try {
+      verifyToken(csrfTokenHeader)
+      // Process the form submission
+      res.status(200).json({ message: 'Form submitted successfully!' })
+    } catch (error) {
+      console.error("CSRF verification failed:", error)
+      return res.status(400).json({ message: 'Invalid CSRF token' })
+    }
+  } else {
+    res.status(405).json({ message: 'Method Not Allowed' })
+  }
+}
+
+//In your form component when rendering
+
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+import { generateCsrfToken } from '../utils/csrf';
+
+
+
+function MyForm() {
+  const [csrfToken, setCsrfToken] = useState('');
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    _csrf: ''
+  });
+
+  useEffect(() => {
+    const fetchCsrfToken = async () => {
+        const token = generateCsrfToken();
+        setCsrfToken(token);
+        setFormData(prev => ({ ...prev, _csrf: token }));
+    };
+    fetchCsrfToken();
+  }, []);
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    try {
+      await axios.post('/api/form', formData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'CSRF-Token': csrfToken  // Set CSRF token in header
+        }
+      });
+
+      alert('Form submitted!');
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      alert('Error submitting form');
+    }
+  };
+}
+"""
+
+### 2.3 Client-Side Security
+
+**Standard:** Minimize the amount of sensitive data exposed on the client-side.
+
+**Why:** Client-side code is visible to anyone, so it's crucial to avoid storing sensitive information or performing sensitive operations in the browser.
+
+**Do This:**
+
+*   Move sensitive logic to the server-side API routes.
+*   Avoid storing sensitive data in local storage or cookies.
+*   Use environment variables for configuration values that are safe to expose on the client-side (prefixed with "NEXT_PUBLIC_").
+
+**Don't Do This:**
+
+*   Store API keys or secrets in client-side code.
+*   Perform sensitive operations, such as data deletion, on the client-side.
+*   Expose more data than necessary on client-side components.
+
+**Example (Fetching Data Safely):**
+
+"""tsx
+// pages/profile.tsx
+import { useState, useEffect } from 'react';
+
+interface UserProfile {
+  id: number;
+  name: string;
+  email: string;
+  // ... other user data (excluding sensitive fields like password)
+}
+
+const ProfilePage = () => {
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const response = await fetch('/api/profile'); // Fetch via an API route.
+        if (!response.ok) {
+          throw new Error('Failed to fetch profile');
+        }
+        const data: UserProfile = await response.json();
+        setProfile(data);
+      } catch (error) {
+        console.error('Error fetching profile:', error);
+      }
+    };
+
+    fetchProfile();
+  }, []);
+
+  if (!profile) {
+    return <p>Loading profile...</p>;
+  }
+
+  return (
+    <div>
+      <h1>Profile</h1>
+      <p>Name: {profile.name}</p>
+      <p>Email: {profile.email}</p>
+    </div>
+  );
+};
+
+export default ProfilePage;
+
+
+// pages/api/profile.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import { getSession } from 'next-auth/react';
+//import { findUserById } from '../../lib/db'; // Your data fetching logic
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    const session = await getSession({ req });
+    if (!session) {
+       return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const userId = session.user.id; // Retrieve user ID from the session
+
+    //This is where you make a call to a data layer, but don't expose *all* fields, only what is needed.
+    const user = {name: "Test", id: userId, email: "test@test.com"}; //await findUserById(userId);
+
+    if (!user) {
+       return res.status(404).json({ error: 'User not found' });
+    }
+
+    //Exclude sensitive fields like password, tokens, etc.
+    const safeUser = {
+        id: user.id,
+        name: user.name,
+        email: user.email
+      };
+      return res.status(200).json(safeUser); // Return the safe user profile
+}
+"""
+
+### 2.4 Third-Party Dependencies
+
+**Standard:** Carefully evaluate and manage third-party dependencies to minimize the risk of security vulnerabilities.
+
+**Why:** Third-party dependencies can introduce security vulnerabilities into your application if they are not properly maintained or if they contain malicious code.
+
+**Do This:**
+
+*   Use a dependency management tool (e.g., npm, yarn, pnpm) to track and update dependencies.
+*   Regularly run security audits on your dependencies using tools like "npm audit" or "yarn audit".
+*   Evaluate the security posture of third-party libraries before using them. Consider factors such as the library's maintainership, community support, and known vulnerabilities.
+*   Use [Snyk](mdc:https:/snyk.io) or similar tools to continuously monitor dependencies.
+*   Use tools like "Renovate" to help automate dependency updates.
+
+**Don't Do This:**
+
+*   Use outdated or unmaintained dependencies.
+*   Blindly trust third-party libraries without evaluating their security.
+*   Ignore security alerts from dependency management tools.
+
+### 2.5 Content Security Policy (CSP)
+
+**Standard:** Implement a Content Security Policy (CSP) to mitigate the risk of XSS attacks by controlling the sources from which the browser is allowed to load resources.
+
+**Why:** CSP helps prevent attackers from injecting malicious scripts into your application by restricting the domains from which scripts, stylesheets, and other resources can be loaded.
+
+**Do This:**
+
+*   Define a CSP header in your Next.js configuration or server-side code.
+*   Use the "strict-dynamic" directive to simplify CSP configuration and improve compatibility with modern JavaScript frameworks.
+*   Regularly review and update your CSP to ensure it's effectively protecting your application.
+
+**Don't Do This:**
+
+*   Use a permissive CSP that allows resources to be loaded from any domain.
+*   Fail to validate the CSP header on the server-side.
+
+**Example (CSP Configuration in "next.config.js"):**
+
+"""javascript
+// next.config.js
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self';",
+          },
+        ],
+      },
+    ];
+  },
+};
+"""
+
+**Explanation:**
+
+*   "default-src 'self'":  Specifies that resources should only be loaded from the same origin as the application.
+*   "script-src 'self' 'unsafe-eval'": Allow scripts from the same origin, and allows the use of "eval()".  Removing "unsafe-eval" may break some libraries.
+*   "style-src 'self' 'unsafe-inline'": Allow Styles from the same origin, and allows inline styles. Using a nonce hash is the best way to remove "unsafe-inline" and is the recommended standard.  Tools like "styled-components" are hard to configure with CSP without the "'unsafe-inline'" declaration, but can be done.
+*   "img-src 'self' data:": Allows loading images from the same origin and from data URLs.
+*   "font-src 'self'": Allows loading fonts from the same origin.
+*   "connect-src 'self'": Allows making network requests to the same origin.
+
+### 2.6 Rate Limiting
+
+**Standard:** Implement rate limiting to protect against brute-force attacks and other forms of abuse.
+
+**Why:** Rate limiting prevents attackers from overwhelming your server with requests, which can lead to denial-of-service attacks or other security incidents.
+
+**Do This:**
+
+*   Use middleware to implement rate limiting for API routes and other critical endpoints.
+*   Configure rate limits based on factors such as IP address, user ID, and request type.
+*   Implement appropriate error handling to inform users when they have exceeded the rate limit.
+
+**Don't Do This:**
+
+*   Fail to implement rate limiting for critical endpoints.
+*   Use overly permissive rate limits that allow attackers to make a large number of requests.
+
+**Example (Rate Limiting with "next-rate-limit"):**
+
+"""typescript
+// pages/api/protected.ts
+import { NextApiRequest, NextApiResponse } from 'next';
+import { RateLimit } from 'next-rate-limit';
+
+const rateLimit = RateLimit({
+   interval: 60 * 1000, // 1 minute
+   rate: 10, // 10 requests per minute
+   uniqueTokenPerInterval: 500, // Max 500 users per minute
+});
+
+async function handler(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    await rateLimit.consume(req, res);
+    res.status(200).json({ message: 'API Route accessed successfully' });
+  } catch (e) {
+    console.info(e);
+    res.status(429).json({ message: 'Too Many Requests' });
+  }
+}
+
+export default handler;
+"""
+
+### 2.7  Preventing Clickjacking
+
+**Standard:** Implement defenses against clickjacking attacks by setting the "X-Frame-Options" header.
+
+**Why:** Clickjacking tricks users into clicking something different from what they perceive, potentially leading to malicious actions.  The "X-Frame-Options" header controls whether your site can be embedded in a "<frame>", "<iframe>", or "<object>".
+
+**Do This:**
+
+*   Set the "X-Frame-Options" header to "DENY" to prevent your site from being framed at all, or "SAMEORIGIN" to allow framing only by pages from the same origin.  **"DENY" is generally the recommended setting**.
+
+**Don't Do This:**
+
+*   Leave the "X-Frame-Options" header unset, which leaves your site vulnerable to clickjacking.  Don't set it to "ALLOW-FROM", as this directive is deprecated and not supported by all browsers.
+
+**Example (Setting "X-Frame-Options" in "next.config.js"):**
+
+"""javascript
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',  // Or 'SAMEORIGIN', but DENY is preferred
+          },
+        ],
+      },
+    ];
+  },
+};
+"""
+
+## 3. Ongoing Security Practices
+
+### 3.1 Penetration Testing
+
+**Standard:** Conduct regular penetration testing to identify vulnerabilities in your application.
+
+**Why:** Penetration testing simulates real-world attacks, allowing you to discover and address security weaknesses before they can be exploited by malicious actors.
+
+**Do This:**
+
+*   Engage qualified security professionals to perform penetration testing on your application.
+*   Conduct penetration testing at least annually, or more frequently if your application undergoes significant changes.
+*   Address all identified vulnerabilities promptly and thoroughly.
+
+### 3.2 Security Training
+
+**Standard:** Provide regular security training to your development team.
+
+**Why:** Security training helps developers build more secure applications by raising awareness of common vulnerabilities and secure coding practices.
+
+**Do This:**
+
+*   Provide regular training on topics such as OWASP Top 10, secure coding practices, and data privacy.
+*   Encourage developers to stay up-to-date on the latest security threats and trends.
+
+By adhering to these security best practices, you can significantly reduce the risk of vulnerabilities in your Next.js application and protect your users and data. This guide should be considered a living document and be updated regularly to reflect the evolving threat landscape and best practices.
