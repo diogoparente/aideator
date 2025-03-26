@@ -96,7 +96,23 @@ export const createClient = (guestId?: string) => {
         autoRefreshToken: true,
         storageKey: 'sb-auth-token',
         detectSessionInUrl: true,
-        debug: process.env.NODE_ENV === 'development',
+        // Disable debug logs in all environments to prevent excessive logging
+        debug: false,
+        // Alternative approach: only enable debug in development and implement a custom logger
+        // debug: process.env.NODE_ENV === 'development',
+        // logger: {
+        //   error: (message: string) => console.error(message),
+        //   warn: (message: string) => console.warn(message),
+        //   info: (() => {
+        //     const loggedMessages = new Set<string>();
+        //     return (message: string) => {
+        //       if (!loggedMessages.has(message)) {
+        //         console.log(message);
+        //         loggedMessages.add(message);
+        //       }
+        //     };
+        //   })(),
+        // },
       },
       global: {
         headers,

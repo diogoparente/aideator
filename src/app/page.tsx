@@ -22,7 +22,7 @@ export default function ClickerGamePage() {
   const formattedPlayers = allPlayers.map(player => ({
     id: player.id,
     username: player.username || 'Anonymous',
-    clicks: player.qty,
+    clicks: player.clicks,
     rank: player.rank
   }));
 
@@ -45,7 +45,9 @@ export default function ClickerGamePage() {
             clickCount={clickCount}
             rank={userRank}
             loading={isLoading}
-            onClickButton={handleClickUpdate}
+            onClickButton={async () => {
+              await handleClickUpdate();
+            }}
           />
         </div>
 

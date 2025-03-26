@@ -1,503 +1,313 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { User } from "@supabase/supabase-js";
 import { useSupabase } from "@/lib/supabase/provider";
 import { toast } from "sonner";
 import { updateClickAction } from "@/app/actions";
-import { handleError } from "@/lib/error-handler";
-import { refreshSession } from "@/lib/supabase/client";
 
-// Type definitions
-export interface UserProfile {
+// Types with focused responsibilities
+export interface PlayerScore {
     id: string;
-    username?: string;
-}
-
-export interface ClickRecord {
-    id: string;
-    qty: number;
-}
-
-export interface RankedPlayer {
-    id: string;
-    qty: number;
     username: string;
+    clicks: number;
     rank: number;
-    scoreChange?: 'increase' | 'decrease' | 'none';
+    isCurrentUser?: boolean;
 }
 
+// Click queue with batch processing
+interface ClickQueueState {
+    pendingClicks: number;
+    isProcessing: boolean;
+    lastProcessedTimestamp: number;
+}
+
+// Core hook with minimal responsibilities
 export function useClickerGame() {
+    // Essential state only
     const [user, setUser] = useState<User | null>(null);
-    const [profilesData, setProfilesData] = useState<UserProfile[]>([]);
-    const [clicksData, setClicksData] = useState<ClickRecord[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [players, setPlayers] = useState<PlayerScore[]>([]);
     const [clickCount, setClickCount] = useState(0);
-    const [allPlayers, setAllPlayers] = useState<RankedPlayer[]>([]);
-    const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
-    const processingRef = useRef(false);
-    const updateQueue = useRef<ClickRecord[]>([]);
-    const channelRef = useRef<ReturnType<typeof useSupabase.prototype.channel> | null>(null);
-    const dataFreshness = useRef<number>(0);
-    const reconnectAttempts = useRef<number>(0);
-    const maxReconnectAttempts = 5;
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+
+    // Click queue state with Ref to avoid render cycles
+    const clickQueueRef = useRef<ClickQueueState>({
+        pendingClicks: 0,
+        isProcessing: false,
+        lastProcessedTimestamp: 0
+    });
+
+    // Track server-confirmed clicks separately from UI state
+    const serverConfirmedClicksRef = useRef<number>(0);
+
     const supabase = useSupabase();
-    const prevScores = useRef<Record<string, number>>({});
 
-    // Get current user
-    useEffect(() => {
-        async function getUser() {
-            try {
-                // Try to refresh the session first
-                try {
-                    console.log("Automatically refreshing session on mount");
-                    const { error } = await refreshSession();
-                    if (error) {
-                        console.warn("Session refresh warning:", error.message);
-                    } else {
-                        console.log("Session refreshed successfully on mount");
-                    }
-                } catch (refreshError) {
-                    console.error("Error refreshing session on mount:", refreshError);
+    // 3. Data Fetching - Single Responsibility 
+    const fetchScores = useCallback(async () => {
+        try {
+            // Get all profiles
+            const { data: profiles, error: profilesError } = await supabase
+                .from('profiles')
+                .select('id, username');
+
+            if (profilesError) throw profilesError;
+
+            // Get all clicks
+            const { data: clicks, error: clicksError } = await supabase
+                .from('clicks')
+                .select('id, qty');
+
+            if (clicksError) throw clicksError;
+
+            // Log the current user ID and clicks fetched to debug
+            console.log('Current user ID:', user?.id);
+            console.log('Clicks fetched:', clicks);
+
+            // Update current user's click count if available
+            const userClicks = clicks?.find(click => click.id === user?.id);
+            if (userClicks) {
+                console.log('Found user clicks:', userClicks);
+                // Update the server-confirmed click count
+                serverConfirmedClicksRef.current = userClicks.qty || 0;
+
+                // Update UI with server count + any pending clicks
+                setClickCount(serverConfirmedClicksRef.current + clickQueueRef.current.pendingClicks);
+            } else {
+                console.log('No user clicks found in database for:', user?.id);
+
+                // Reset to zero if user is logged in but no clicks are found
+                if (user?.id) {
+                    console.log('Resetting to zero + pending clicks');
+                    serverConfirmedClicksRef.current = 0;
+                    setClickCount(clickQueueRef.current.pendingClicks);
                 }
+            }
 
-                // Now try to get the user
-                const { data: { user }, error } = await supabase.auth.getUser();
+            // Combine and format data
+            const combinedData = profiles.map(profile => {
+                const score = clicks?.find(click => click.id === profile.id);
+                return {
+                    id: profile.id,
+                    username: profile.username || 'Anonymous',
+                    clicks: score?.qty || 0,
+                    rank: 0, // Will be calculated next
+                    isCurrentUser: profile.id === user?.id
+                };
+            });
+
+            // Sort and assign ranks
+            const rankedPlayers = [...combinedData]
+                .sort((a, b) => b.clicks - a.clicks)
+                .map((player, index) => ({
+                    ...player,
+                    rank: index + 1
+                }));
+
+            setPlayers(rankedPlayers);
+            setIsLoading(false);
+        } catch (error) {
+            console.error("Error fetching data:", error);
+            toast.error("Failed to load data");
+            setIsLoading(false);
+        }
+    }, [supabase, user]);
+
+    // 1. Authentication - Single Responsibility
+    useEffect(() => {
+        async function setupAuth() {
+            try {
+                console.log("Setting up auth for clicker game");
+
+                // Try to refresh session for better auth stability
+                const refreshResult = await supabase.auth.refreshSession();
+                console.log("Session refresh result:", !!refreshResult.data.session);
+
+                const { data, error } = await supabase.auth.getUser();
 
                 if (error) {
-                    console.warn("Authentication warning:", error.message);
+                    console.warn("Auth warning:", error.message);
                 }
 
-                setUser(user);
+                console.log("Auth user data:", data?.user?.id ? `User ${data.user.id}` : "No user");
+                setUser(data.user);
 
-                if (!user) {
+                if (!data.user) {
                     toast.info("Not logged in", {
                         description: "Log in to save your progress and compete on the leaderboard",
                         duration: 5000
                     });
-                } else {
-                    console.log("User authenticated:", user.id);
                 }
             } catch (error) {
-                console.error("Authentication error:", error);
-                toast.error("Authentication issue", {
-                    description: "Unable to verify your login status"
-                });
+                console.error("Auth error:", error);
             }
         }
-        getUser();
+
+        setupAuth();
     }, [supabase]);
 
-    // Initialize real-time connection when user is available
+    // 2. Data Subscription - Single Responsibility
     useEffect(() => {
-        if (!user?.id) return;
-        supabase.realtime.setAuth(user.id);
+        setIsLoading(true);
+
+        // Setup subscription to both tables
+        const scoresChannel = supabase
+            .channel('clicker-scores')
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'clicks' },
+                () => fetchScores()
+            )
+            .subscribe(status => {
+                console.log(`Subscription status: ${status}`);
+                setStatus(status === 'SUBSCRIBED' ? 'connected' :
+                    status === 'CHANNEL_ERROR' ? 'error' : 'connecting');
+            });
+
+        // Initial data load
+        fetchScores();
+
+        return () => {
+            supabase.removeChannel(scoresChannel);
+        };
+    }, [supabase, fetchScores]);
+
+    // 4. Click Queue Processing - Using Fibonacci backoff for batch timing
+    const processClickQueue = useCallback(async () => {
+        const queue = clickQueueRef.current;
+
+        // Prevent concurrent processing
+        if (queue.isProcessing || queue.pendingClicks === 0 || !user?.id) {
+            return;
+        }
+
+        // Lock the queue for processing
+        queue.isProcessing = true;
+
+        try {
+            const clicksToProcess = queue.pendingClicks;
+            const newTotal = serverConfirmedClicksRef.current + clicksToProcess;
+
+            console.log(`Processing ${clicksToProcess} clicks. Current server count: ${serverConfirmedClicksRef.current}, New total: ${newTotal}`);
+
+            // Call the server action with the TOTAL click count
+            const result = await updateClickAction(
+                user.id,
+                user.id,
+                newTotal
+            );
+
+            if (result.success) {
+                // Update server-confirmed clicks
+                serverConfirmedClicksRef.current = result.newCount || newTotal;
+
+                // Clear processed clicks from queue
+                queue.pendingClicks -= clicksToProcess;
+
+                // Update last timestamp
+                queue.lastProcessedTimestamp = Date.now();
+            } else {
+                console.error("Batch update failed:", result.error);
+
+                // If there's an auth issue, try to refresh the session
+                if (result.error?.includes('Authentication')) {
+                    const { error } = await supabase.auth.refreshSession();
+                    if (!error) {
+                        // Retry once after refreshing
+                        const retryResult = await updateClickAction(user.id, user.id, newTotal);
+                        if (retryResult.success) {
+                            serverConfirmedClicksRef.current = retryResult.newCount || newTotal;
+                            queue.pendingClicks -= clicksToProcess;
+                            queue.lastProcessedTimestamp = Date.now();
+                        } else {
+                            toast.error("Update failed after refresh");
+                        }
+                    } else {
+                        toast.error("Session refresh failed");
+                    }
+                } else {
+                    toast.error("Failed to update score");
+                }
+            }
+        } catch (error) {
+            console.error("Click batch processing error:", error);
+        } finally {
+            // Unlock queue when done
+            queue.isProcessing = false;
+
+            // If there are still pending clicks, schedule next batch
+            // using Fibonacci backoff timing
+            if (queue.pendingClicks > 0) {
+                const timeSinceLastProcess = Date.now() - queue.lastProcessedTimestamp;
+                const nextBatchDelay = calculateFibonacciBackoff(timeSinceLastProcess);
+
+                setTimeout(processClickQueue, nextBatchDelay);
+            }
+        }
     }, [user, supabase]);
 
-    // Fetch profiles data
-    useEffect(() => {
-        async function fetchProfiles() {
-            try {
-                setIsLoading(true);
-                const { data, error } = await supabase
-                    .schema('public')
-                    .from('profiles')
-                    .select('id, username');
+    // Helper function for Fibonacci backoff calculation
+    const calculateFibonacciBackoff = (lastDelay: number) => {
+        // Start with a minimum 200ms delay
+        if (lastDelay < 200) return 200;
 
-                if (error) throw error;
-                setProfilesData(data || []);
-            } catch (error: unknown) {
-                handleError(error);
-                toast.error("Failed to load player data", {
-                    description: "Unable to fetch player profiles"
-                });
-            } finally {
-                setIsLoading(false);
-            }
-        }
-        fetchProfiles();
-    }, [supabase]);
+        // Calculate Fibonacci sequence: each number is the sum of the two preceding ones
+        // This gives us: 200, 300, 500, 800, 1300, 2100, 3400, etc.
+        const a = Math.floor(lastDelay * 0.618); // Golden ratio approximation
+        const b = lastDelay;
+        const nextDelay = a + b;
 
-    // Process update queue efficiently
-    const processUpdateQueue = useCallback(() => {
-        if (processingRef.current || updateQueue.current.length === 0) return;
+        // Cap at 5 seconds
+        return Math.min(nextDelay, 5000);
+    };
 
-        processingRef.current = true;
-
-        // Take the latest updates only (skip intermediate states)
-        const latestUpdates = new Map<string, ClickRecord>();
-
-        // Get only the latest update for each player
-        updateQueue.current.forEach(update => {
-            latestUpdates.set(update.id, update);
-        });
-
-        // Clear the queue
-        updateQueue.current = [];
-
-        // Update clicks data with latest values
-        setClicksData(currentData => {
-            const newData = [...currentData];
-
-            Array.from(latestUpdates.values()).forEach(update => {
-                const index = newData.findIndex(click => click.id === update.id);
-                if (index >= 0) {
-                    newData[index] = update;
-                } else {
-                    newData.push(update);
-                }
-            });
-
-            return newData;
-        });
-
-        // Update timestamp of last data refresh
-        dataFreshness.current = Date.now();
-        processingRef.current = false;
-    }, []);
-
-    // Clean up function for subscriptions and intervals
-    const cleanupResources = useCallback(() => {
-        // Clean up channel
-        if (channelRef.current) {
-            try {
-                supabase.removeChannel(channelRef.current);
-            } catch (error) {
-                console.warn("Error removing channel:", error);
-            }
-            channelRef.current = null;
-        }
-
-        // Clean up reconnect timeout
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = null;
-        }
-
-        // Clean up polling interval
-        if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-        }
-    }, [supabase]);
-
-    // Fetch click data
-    const fetchClickData = useCallback(async () => {
-        if (!user?.id) {
-            setClicksData([]);
-            setClickCount(0);
-            return;
-        }
-
-        try {
-            const { data, error } = await supabase
-                .schema('public')
-                .from('clicks')
-                .select('id, qty');
-
-            if (error) throw error;
-
-            setClicksData(data || []);
-            dataFreshness.current = Date.now();
-
-            // Set user's click count if available
-            const userClick = data?.find(click => click.id === user.id);
-            if (userClick) {
-                setClickCount(userClick.qty || 0);
-            }
-
-            return true;
-        } catch (error) {
-            console.error("Error fetching click data:", error);
-            return false;
-        }
-    }, [supabase, user]);
-
-    // Start polling mechanism as a fallback
-    const startPolling = useCallback(() => {
-        // Clear any existing polling interval first
-        if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-        }
-
-        pollingIntervalRef.current = setInterval(() => {
-            if (Date.now() - dataFreshness.current > 3000) {
-                fetchClickData();
-            }
-        }, 3000);
-    }, [fetchClickData]);
-
-    // Setup real-time subscription with exponential backoff reconnection
-    const setupRealtimeSubscription = useCallback(async () => {
-        if (!user?.id) return;
-
-        // Clean up existing resources first
-        cleanupResources();
-
-        // Set status to connecting
-        setConnectionStatus('connecting');
-
-        try {
-            // First, fetch initial data
-            const fetchSuccess = await fetchClickData();
-            if (!fetchSuccess) {
-                throw new Error("Failed to fetch initial data");
-            }
-
-            // Create a channel with proper configuration
-            const channel = supabase
-                .channel('clicker-game', {
-                    config: {
-                        broadcast: { self: true },
-                        presence: { key: '' }
-                    }
-                })
-                .on('postgres_changes',
-                    { event: '*', schema: 'public', table: 'clicks' },
-                    (payload) => {
-                        if (payload.new && typeof payload.new === 'object' && 'id' in payload.new) {
-                            updateQueue.current.push(payload.new as ClickRecord);
-                            requestAnimationFrame(processUpdateQueue);
-                        }
-                    }
-                )
-                .subscribe(status => {
-                    console.log(`Subscription status: ${status}`);
-
-                    if (status === 'SUBSCRIBED') {
-                        setConnectionStatus('connected');
-                        reconnectAttempts.current = 0; // Reset reconnect attempts on success
-                    } else if (status === 'CHANNEL_ERROR') {
-                        console.warn('Supabase channel error occurred');
-                        setConnectionStatus('error');
-
-                        // Implement exponential backoff for reconnection
-                        if (reconnectAttempts.current < maxReconnectAttempts) {
-                            const backoffTime = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-                            console.log(`Attempting to reconnect in ${backoffTime}ms (attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts})`);
-
-                            reconnectTimeoutRef.current = setTimeout(() => {
-                                reconnectAttempts.current++;
-                                setupRealtimeSubscription();
-                            }, backoffTime);
-                        } else {
-                            console.warn(`Max reconnection attempts (${maxReconnectAttempts}) reached, falling back to polling`);
-                            startPolling();
-                        }
-                    } else if (status === 'TIMED_OUT') {
-                        // Handle timeout specifically - this often happens when the server is slow to respond
-                        console.warn('Subscription timed out, attempting to reconnect');
-                        setConnectionStatus('connecting');
-
-                        // Use a shorter timeout for timeouts vs errors
-                        reconnectTimeoutRef.current = setTimeout(() => {
-                            setupRealtimeSubscription();
-                        }, 2000);
-                    }
-                });
-
-            // Store the channel reference
-            channelRef.current = channel;
-
-        } catch (error) {
-            console.error("Error setting up real-time subscription:", error);
-            setConnectionStatus('error');
-            startPolling(); // Start polling as fallback
-        }
-    }, [user, supabase, fetchClickData, startPolling, cleanupResources, processUpdateQueue]);
-
-    // Set up real-time subscription
-    useEffect(() => {
-        // Only setup subscription if we have a user
-        if (user?.id) {
-            setupRealtimeSubscription();
-        }
-
-        // Cleanup function
-        return cleanupResources;
-    }, [user, setupRealtimeSubscription, cleanupResources]);
-
-    // Process scores to create ranked player list
-    useEffect(() => {
-        if (!clicksData || !profilesData.length) return;
-
-        requestAnimationFrame(() => {
-            try {
-                // Save previous scores for animation
-                const newPrevScores: Record<string, number> = {};
-
-                allPlayers.forEach(player => {
-                    newPrevScores[player.id] = player.qty;
-                });
-
-                // Map user IDs to click counts
-                const clickMap = new Map<string, number>();
-                clicksData.forEach((click) => {
-                    clickMap.set(click.id, click.qty || 0);
-                });
-
-                // Update current user's click count if available
-                if (user?.id) {
-                    const userClicks = clickMap.get(user.id) || 0;
-                    setClickCount(userClicks);
-                }
-
-                // Combine profiles with click data
-                const combinedData = profilesData.map(profile => {
-                    const clicks = clickMap.get(profile.id) || 0;
-                    const prevScore = prevScores.current[profile.id] || 0;
-
-                    // Determine if score changed
-                    let scoreChange: 'increase' | 'decrease' | 'none' = 'none';
-                    if (clicks > prevScore) scoreChange = 'increase';
-                    else if (clicks < prevScore) scoreChange = 'decrease';
-
-                    return {
-                        id: profile.id,
-                        qty: clicks,
-                        username: profile.username || 'Anonymous Player',
-                        rank: 0,
-                        scoreChange
-                    };
-                });
-
-                // Sort and assign ranks
-                const sortedData = [...combinedData]
-                    .sort((a, b) => b.qty - a.qty)
-                    .map((player, index) => ({
-                        ...player,
-                        rank: index + 1
-                    }));
-
-                setAllPlayers(sortedData);
-                prevScores.current = newPrevScores;
-            } catch (error) {
-                console.error("Error processing data:", error);
-            }
-        });
-    }, [clicksData, profilesData, user, allPlayers]);
-
-    // Handle click updates
-    const handleClickUpdate = useCallback(async () => {
+    // 5. Click Handler - Now just queues clicks and triggers processing
+    const handleClick = useCallback(() => {
         if (!user?.id) {
             toast.error("Authentication required", {
-                description: "Please log in to play the game",
+                description: "Please log in to play"
             });
             return;
         }
 
-        // Get current click count to use throughout this function call
-        // This prevents race conditions with rapid clicks
-        const currentCount = clickCount;
+        console.log('Click registered', {
+            currentCount: clickCount,
+            serverConfirmed: serverConfirmedClicksRef.current,
+            pendingBefore: clickQueueRef.current.pendingClicks
+        });
 
-        try {
-            // Re-verify authentication before proceeding
-            const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+        // Increment pending clicks counter
+        clickQueueRef.current.pendingClicks++;
 
-            console.log("Auth check before click:", {
-                hasCurrentUser: !!currentUser,
-                currentUserId: currentUser?.id,
-                cachedUserId: user?.id,
-                authError: authError?.message
-            });
+        // Update UI immediately for responsive feel - make sure to use functional update
+        setClickCount(prevCount => prevCount + 1);
 
-            // Try to continue even without current user (for debugging)
-            const effectiveUserId = currentUser?.id || user.id;
+        console.log('After click', {
+            pendingAfter: clickQueueRef.current.pendingClicks,
+            isProcessing: clickQueueRef.current.isProcessing
+        });
 
-            // Optimistic update (use atomically incremented value)
-            setClickCount(prevCount => prevCount + 1);
-
-            // Log attempt before action
-            console.log(`Attempting to update clicks for user: ${effectiveUserId} (count: ${currentCount + 1})`);
-
-            const result = await updateClickAction(effectiveUserId, effectiveUserId, currentCount + 1);
-
-            console.log("Update result:", result);
-
-            if (!result.success) {
-                console.error("Error updating click count:", result.error);
-
-                // Special handling for auth errors
-                if (result.error?.includes('Authentication required') || result.error?.includes('User ID mismatch')) {
-                    toast.error("Authentication issue", {
-                        description: "Trying to refresh your session...",
-                    });
-
-                    // Force refresh auth session
-                    const { error: refreshError } = await refreshSession();
-
-                    if (refreshError) {
-                        console.error("Session refresh failed:", refreshError);
-                        toast.error("Session refresh failed", {
-                            description: "Please try logging out and back in",
-                        });
-                    } else {
-                        // Try again after refresh
-                        const { data: { user: refreshedUser } } = await supabase.auth.getUser();
-                        if (refreshedUser) {
-                            console.log("Session refreshed, retrying with user:", refreshedUser.id);
-                            const retryResult = await updateClickAction(refreshedUser.id, refreshedUser.id, currentCount + 1);
-
-                            if (retryResult.success) {
-                                console.log("Retry successful:", retryResult);
-                                if (retryResult.newCount !== undefined) {
-                                    setClickCount(retryResult.newCount);
-                                }
-                                return;
-                            } else {
-                                console.error("Retry failed:", retryResult.error);
-                            }
-                        }
-                    }
-                }
-
-                // Generic error handling
-                toast.error("Failed to update score", {
-                    description: result.error || "Please try again"
-                });
-
-                // Revert to server state on error
-                if (result.newCount !== undefined) {
-                    setClickCount(result.newCount);
-                }
-                return;
-            }
-
-            // Sync with confirmed server value if needed - but only if it's greater than our current local state
-            if (result.newCount !== undefined && result.newCount > clickCount) {
-                setClickCount(result.newCount);
-            }
-        } catch (error) {
-            console.error("Error updating click count:", error);
-            toast.error("Failed to update score", {
-                description: error instanceof Error ? error.message : "Please try again",
-            });
+        // Process queue if not already processing
+        if (!clickQueueRef.current.isProcessing) {
+            processClickQueue();
         }
-    }, [user, clickCount, supabase]);
+    }, [user, processClickQueue, clickCount]);
 
-    // Calculate user rank and get username
-    const userRank = useMemo(() => {
-        if (!user?.id || !allPlayers.length) return 0;
-        const userPlayer = allPlayers.find(player => player.id === user.id);
-        return userPlayer?.rank || 0;
-    }, [user, allPlayers]);
+    // 6. Derived Data - Single Responsibility
+    const currentUserRank = players.find(player => player.isCurrentUser)?.rank || 0;
+    const currentUsername = players.find(player => player.isCurrentUser)?.username ||
+        user?.email?.split('@')[0] ||
+        "Anonymous Player";
 
-    const username = useMemo(() => {
-        if (!user?.id || !profilesData.length) return "Anonymous Player";
-        const userProfile = profilesData.find(profile => profile.id === user.id);
-        return userProfile?.username || user.email?.split('@')[0] || "Anonymous Player";
-    }, [user, profilesData]);
-
+    // Return a clean interface
     return {
         user,
         clickCount,
-        userRank,
-        username,
-        allPlayers,
+        userRank: currentUserRank,
+        username: currentUsername,
+        allPlayers: players,
         isLoading,
-        connectionStatus,
-        handleClickUpdate
+        connectionStatus: status,
+        handleClickUpdate: handleClick,
+        pendingClicks: clickQueueRef.current.pendingClicks
     };
 } 

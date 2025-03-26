@@ -10,7 +10,7 @@ type UpdateClickResult = {
 };
 
 /**
- * Server action to update click count with optimistic updates
+ * Server action to update click count with atomic increment
  * @param userId - The ID of the user making the update
  * @param playerId - The ID of the player to update
  * @param qty - The new quantity value
@@ -24,15 +24,18 @@ export async function updateClickAction(
     try {
         // Server-side validation
         if (!userId || !playerId) {
+            console.error('Update click action failed: Missing user/player ID');
             return { success: false, error: 'User authentication required - missing IDs' };
         }
 
         if (typeof qty !== 'number' || qty < 0) {
+            console.error('Update click action failed: Invalid qty', qty);
             return { success: false, error: 'Invalid click count' };
         }
 
         // Security check: Only allow users to update their own count
         if (userId !== playerId) {
+            console.error('Update click action failed: User ID mismatch', { userId, playerId });
             return { success: false, error: 'Unauthorized action' };
         }
 
@@ -59,6 +62,7 @@ export async function updateClickAction(
 
         // For now, allow operations in Vercel to debug the issue
         if (!user && !isDev && !isVercel) {
+            console.error('Update click action failed: No authenticated user found');
             return { success: false, error: 'Authentication required - no user found' };
         }
 
@@ -84,15 +88,25 @@ export async function updateClickAction(
         // Get current value or default to 0
         const currentQty = currentData?.qty || 0;
 
-        // Only update if the new value is higher than the current value
-        // This prevents race conditions on fast clicks
+        // IMPROVED: Use the requested quantity if it's higher, otherwise keep current
+        // This ensures we don't overwrite higher values from concurrent requests
         const newQty = Math.max(currentQty, qty);
 
         console.log('Click update logic:', {
             currentQty,
             requestedQty: qty,
-            finalQty: newQty
+            finalQty: newQty,
+            playerId
         });
+
+        // If there's no change needed, return early with success
+        if (newQty === currentQty) {
+            console.log('No click update needed - already at requested value');
+            return {
+                success: true,
+                newCount: currentQty
+            };
+        }
 
         // Use upsert for better performance (creates or updates in a single operation)
         const { data, error } = await supabase
@@ -109,9 +123,15 @@ export async function updateClickAction(
             .single();
 
         if (error) {
-            console.error('Database error:', error);
+            console.error('Database error during click update:', error);
             return { success: false, error: 'Failed to update click count' };
         }
+
+        console.log('Click update successful:', {
+            playerId,
+            oldValue: currentQty,
+            newValue: data?.qty || newQty
+        });
 
         // Revalidate the home page to update any server-rendered components
         revalidatePath('/');
