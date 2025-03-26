@@ -24,7 +24,9 @@ export default function GameContainer() {
                     rank={userRank}
                     username={username}
                     loading={isLoading}
-                    onClickButton={handleClickUpdate}
+                    onClickButton={async () => {
+                        await handleClickUpdate();
+                    }}
                 />
             </div>
             <div className="md:col-span-2 flex flex-col h-full">
@@ -32,7 +34,7 @@ export default function GameContainer() {
                     players={allPlayers.map(player => ({
                         id: player.id,
                         username: player.username,
-                        clicks: player.qty,
+                        clicks: player.clicks,
                         rank: player.rank
                     }))}
                     currentUserId={user?.id || null}
