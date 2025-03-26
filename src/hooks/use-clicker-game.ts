@@ -6,6 +6,7 @@ import { useSupabase } from "@/lib/supabase/provider";
 import { toast } from "sonner";
 import { updateClickAction } from "@/app/actions";
 import { handleError } from "@/lib/error-handler";
+import { refreshSession } from "@/lib/supabase/client";
 
 // Type definitions
 export interface UserProfile {
@@ -52,7 +53,7 @@ export function useClickerGame() {
                 // Try to refresh the session first
                 try {
                     console.log("Automatically refreshing session on mount");
-                    const { error } = await supabase.auth.refreshSession();
+                    const { error } = await refreshSession();
                     if (error) {
                         console.warn("Session refresh warning:", error.message);
                     } else {
@@ -421,7 +422,7 @@ export function useClickerGame() {
                     });
 
                     // Force refresh auth session
-                    const { error: refreshError } = await supabase.auth.refreshSession();
+                    const { error: refreshError } = await refreshSession();
 
                     if (refreshError) {
                         console.error("Session refresh failed:", refreshError);
