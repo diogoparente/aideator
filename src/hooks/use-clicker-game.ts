@@ -372,10 +372,20 @@ export function useClickerGame() {
         }
 
         try {
+            // Re-verify authentication before proceeding
+            const { data: { user: currentUser } } = await supabase.auth.getUser();
+
+            if (!currentUser) {
+                toast.error("Session expired", {
+                    description: "Please log in again to continue",
+                });
+                return;
+            }
+
             // Optimistic update
             setClickCount(prev => prev + 1);
 
-            const result = await updateClickAction(user.id, user.id, clickCount + 1);
+            const result = await updateClickAction(currentUser.id, currentUser.id, clickCount + 1);
 
             if (!result.success) {
                 console.error("Error updating click count:", result.error);
@@ -400,7 +410,7 @@ export function useClickerGame() {
                 description: error instanceof Error ? error.message : "Please try again",
             });
         }
-    }, [user, clickCount]);
+    }, [user, clickCount, supabase]);
 
     // Calculate user rank and get username
     const userRank = useMemo(() => {
