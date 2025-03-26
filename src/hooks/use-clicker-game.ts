@@ -49,6 +49,20 @@ export function useClickerGame() {
     useEffect(() => {
         async function getUser() {
             try {
+                // Try to refresh the session first
+                try {
+                    console.log("Automatically refreshing session on mount");
+                    const { error } = await supabase.auth.refreshSession();
+                    if (error) {
+                        console.warn("Session refresh warning:", error.message);
+                    } else {
+                        console.log("Session refreshed successfully on mount");
+                    }
+                } catch (refreshError) {
+                    console.error("Error refreshing session on mount:", refreshError);
+                }
+
+                // Now try to get the user
                 const { data: { user }, error } = await supabase.auth.getUser();
 
                 if (error) {
@@ -62,6 +76,8 @@ export function useClickerGame() {
                         description: "Log in to save your progress and compete on the leaderboard",
                         duration: 5000
                     });
+                } else {
+                    console.log("User authenticated:", user.id);
                 }
             } catch (error) {
                 console.error("Authentication error:", error);
@@ -373,22 +389,66 @@ export function useClickerGame() {
 
         try {
             // Re-verify authentication before proceeding
-            const { data: { user: currentUser } } = await supabase.auth.getUser();
+            const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
 
-            if (!currentUser) {
-                toast.error("Session expired", {
-                    description: "Please log in again to continue",
-                });
-                return;
-            }
+            console.log("Auth check before click:", {
+                hasCurrentUser: !!currentUser,
+                currentUserId: currentUser?.id,
+                cachedUserId: user?.id,
+                authError: authError?.message
+            });
+
+            // Try to continue even without current user (for debugging)
+            const effectiveUserId = currentUser?.id || user.id;
 
             // Optimistic update
             setClickCount(prev => prev + 1);
 
-            const result = await updateClickAction(currentUser.id, currentUser.id, clickCount + 1);
+            // Log attempt before action
+            console.log(`Attempting to update clicks for user: ${effectiveUserId} (count: ${clickCount + 1})`);
+
+            const result = await updateClickAction(effectiveUserId, effectiveUserId, clickCount + 1);
+
+            console.log("Update result:", result);
 
             if (!result.success) {
                 console.error("Error updating click count:", result.error);
+
+                // Special handling for auth errors
+                if (result.error?.includes('Authentication required') || result.error?.includes('User ID mismatch')) {
+                    toast.error("Authentication issue", {
+                        description: "Trying to refresh your session...",
+                    });
+
+                    // Force refresh auth session
+                    const { error: refreshError } = await supabase.auth.refreshSession();
+
+                    if (refreshError) {
+                        console.error("Session refresh failed:", refreshError);
+                        toast.error("Session refresh failed", {
+                            description: "Please try logging out and back in",
+                        });
+                    } else {
+                        // Try again after refresh
+                        const { data: { user: refreshedUser } } = await supabase.auth.getUser();
+                        if (refreshedUser) {
+                            console.log("Session refreshed, retrying with user:", refreshedUser.id);
+                            const retryResult = await updateClickAction(refreshedUser.id, refreshedUser.id, clickCount + 1);
+
+                            if (retryResult.success) {
+                                console.log("Retry successful:", retryResult);
+                                if (retryResult.newCount !== undefined) {
+                                    setClickCount(retryResult.newCount);
+                                }
+                                return;
+                            } else {
+                                console.error("Retry failed:", retryResult.error);
+                            }
+                        }
+                    }
+                }
+
+                // Generic error handling
                 toast.error("Failed to update score", {
                     description: result.error || "Please try again"
                 });

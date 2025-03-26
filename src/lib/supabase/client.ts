@@ -44,7 +44,7 @@ export const createClient = (guestId?: string) => {
         autoRefreshToken: true,
         storageKey: 'sb-auth-token',
         detectSessionInUrl: true,
-        debug: false,
+        debug: process.env.NODE_ENV === 'development',
       },
       global: {
         headers,
@@ -62,6 +62,25 @@ export const createClient = (guestId?: string) => {
             const response = await fetch(...args);
             // Check for auth-related errors in the response
             if (!response.ok && (response.status === 401 || response.status === 403)) {
+              console.warn("Auth error in fetch, status:", response.status);
+
+              // Try to refresh the session first
+              if (supabaseInstance) {
+                try {
+                  console.log("Attempting to refresh auth session...");
+                  const { error } = await supabaseInstance.auth.refreshSession();
+                  if (!error) {
+                    console.log("Session refreshed successfully, retrying request");
+                    // Retry the request with the updated session
+                    return fetch(...args);
+                  } else {
+                    console.error("Session refresh failed:", error);
+                  }
+                } catch (refreshError) {
+                  console.error("Error refreshing session:", refreshError);
+                }
+              }
+
               toast.error("Authentication error. Please log in again.");
               if (typeof window !== 'undefined') {
                 setTimeout(() => {
@@ -89,6 +108,50 @@ export const createClient = (guestId?: string) => {
         schema: 'public'
       }
     });
+
+    // Add a refresh helper as a standalone function
+    const refreshSessionIfNeeded = async function () {
+      if (!supabaseInstance) {
+        return { error: new Error("Supabase instance not initialized") };
+      }
+
+      try {
+        const { data: { session } } = await supabaseInstance.auth.getSession();
+        if (!session) {
+          console.log("No session found, skipping refresh");
+          return { error: new Error("No active session") };
+        }
+
+        if (session.expires_at) {
+          console.log("Current session expires at:", new Date(session.expires_at * 1000).toISOString());
+
+          // Check if session is about to expire (within 5 minutes) or has expired
+          const fiveMinutesInSeconds = 5 * 60;
+          const nowInSeconds = Math.floor(Date.now() / 1000);
+          const shouldRefresh = (session.expires_at - nowInSeconds) < fiveMinutesInSeconds;
+
+          if (shouldRefresh) {
+            console.log("Session needs refresh, attempting refresh");
+            return await supabaseInstance.auth.refreshSession();
+          } else {
+            console.log("Session is still valid, no refresh needed");
+            return { data: { session }, error: null };
+          }
+        } else {
+          // If we can't determine expiry, attempt to refresh anyway
+          console.log("Session expiry unknown, attempting refresh");
+          return await supabaseInstance.auth.refreshSession();
+        }
+      } catch (error) {
+        console.error("Error in refreshSessionIfNeeded:", error);
+        return { error: error as AuthError };
+      }
+    };
+
+    // Attach the helper to the global window object for debugging
+    if (typeof window !== 'undefined') {
+      (window as any).__refreshSupabaseSession = refreshSessionIfNeeded;
+    }
 
     // Override the auth methods to add error handling
     const originalGetUser = supabaseInstance.auth.getUser.bind(supabaseInstance.auth);
