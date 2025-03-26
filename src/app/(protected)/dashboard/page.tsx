@@ -1,134 +1,201 @@
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ChartAreaInteractive } from "@/components/chart-area-interactive"
-import { DataTable } from "@/components/data-table"
-import { SectionCards } from "@/components/section-cards"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { MoveRight, RefreshCw } from "lucide-react"
+"use client";
 
-import data from "./data.json"
+import { useState, useEffect, useRef } from "react";
+import { toast } from "sonner";
+import SearchPanel from "./_components/SearchPanel";
+import { InsightsResponse } from "../../api/deepseek/deepseekApi";
+import SearchResults from "./_components/SearchResults";
+import { Idea } from "@/db/schema";
+import { useUser } from "@/hooks/useUser";
+// import ParticlesAnimation from "@/components/ui/particles-animation";
 
-export default function Page() {
+// Define the structure of a Reddit post
+export interface RedditPost {
+  id: string;
+  title: string;
+  subreddit: string;
+  url: string;
+  score: number;
+  created_utc: number;
+  num_comments: number;
+  selftext: string;
+  author: string;
+  relevanceScore?: number;
+}
+
+// Define the structure for SaaS ideas
+export interface SaasIdea {
+  name: string;
+  description: string;
+  targetAudience: string;
+  potentialFeatures: string[];
+  validationSteps: string[];
+}
+
+// Define the structure for competitive landscape
+export interface CompetitiveLandscape {
+  existingSolutions: string[];
+  gaps: string[];
+}
+
+// Define the structure for implementation complexity
+export interface ImplementationComplexity {
+  technical: string;
+  market: string;
+  timeToMvp: string;
+}
+
+// Define the structure for insights response
+export interface InsightsData {
+  commonProblems: string[];
+  potentialSaasIdeas: Idea[];
+  marketTrends: string[];
+  userPainPoints: string[];
+  recommendations: string[];
+  competitiveLandscape: CompetitiveLandscape;
+  monetizationStrategies: string[];
+  implementationComplexity: ImplementationComplexity;
+  actionPlan?: {
+    immediate: string[];
+    shortTerm: string[];
+    longTerm: string[];
+  };
+}
+
+export default function Dashboard() {
+  const { user, loading } = useUser();
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [posts, setPosts] = useState<RedditPost[]>([]);
+  const [insights, setInsights] = useState<InsightsData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (loading) return;
+
+    if (!user) {
+      // Redirect to login if no user
+      window.location.href = "/login";
+      return;
+    }
+  }, [user, loading]);
+
+  useEffect(() => {
+    if (posts.length > 0) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [posts]);
+
+  useEffect(() => {
+    // Only scroll when search is complete AND we have results
+    if (
+      hasSearched &&
+      !searching &&
+      !isLoading &&
+      insights?.potentialSaasIdeas &&
+      insights.potentialSaasIdeas.length > 0
+    ) {
+      // Add a small delay to ensure the UI has updated before scrolling
+      setTimeout(() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }, 300);
+    }
+  }, [hasSearched, searching, isLoading, insights]);
+
+  // Handle search function
+  const handleSearch = async (query: string, categories: string[] = []) => {
+    if (!query.trim()) return;
+
+    setSearchQuery(query);
+    setSelectedCategories(categories);
+    setSearching(true);
+    setIsLoading(true);
+    setHasSearched(true);
+
+    try {
+      // Build URL with query parameters
+      const url = new URL("/api/search", window.location.origin);
+      url.searchParams.append("query", query.trim());
+
+      // Add categories as subreddits to search
+      if (categories.length > 0) {
+        categories.forEach((category) => {
+          url.searchParams.append("customSubreddits", category);
+        });
+      }
+
+      // Make API request
+      const response = await fetch(url.toString());
+
+      if (!response.ok) {
+        throw new Error(`Search failed with status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      setPosts(data.posts || []);
+      setInsights(data.insights);
+
+      if (data.posts?.length === 0) {
+        toast.info(
+          "No results found. Try a different search query or subreddits."
+        );
+      } else {
+        toast.success(`Found ${data.posts?.length} relevant discussions`);
+      }
+
+      // Keep searching state true for a moment to show the completed progress bar
+      setTimeout(() => {
+        setSearching(false);
+      }, 1000);
+    } catch (error) {
+      console.error("Search error:", error);
+      toast.error("An error occurred while searching. Please try again.");
+      setPosts([]);
+      setInsights(null);
+      setSearching(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <Card className="w-full max-w-4xl mx-auto mb-8 sm:max-w-6xl sm:mx-auto md:max-w-8xl md:mx-auto lg:max-w-10xl lg:mx-auto">
-      {/* Dashboard header with welcome message */}
-      <CardHeader className="border-b bg-background px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          </div>
-          <p className="text-muted-foreground">
-            Welcome back! Here&apos;s an overview of your account activity and data.
-          </p>
-        </div>
-      </CardHeader>
+    <div className="relative min-h-screen flex flex-col">
+      {/* Particles Animation - only visible during searching */}
+      {/* <ParticlesAnimation isActive={searching} /> */}
 
-      {/* Dashboard content */}
-      <div className="flex-1 overflow-auto space-y-6 p-4 sm:p-6 lg:p-8">
-        {/* Quick stats section */}
-        <section aria-labelledby="stats-heading">
-          <div className="flex items-center justify-between mb-4">
-            <h2 id="stats-heading" className="text-lg font-semibold">
-              Quick Stats
-            </h2>
-            <Button variant="outline" size="sm">
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
+      <div className="container mx-auto py-4 px-4 relative z-10 flex-grow flex flex-col justify-center">
+        <div
+          ref={searchContainerRef}
+          className={`w-full flex flex-col items-center transition-all duration-700 ease-in-out ${
+            hasSearched &&
+            !searching &&
+            insights?.potentialSaasIdeas &&
+            insights.potentialSaasIdeas.length > 0
+              ? "mt-8"
+              : ""
+          }`}
+        >
+          <SearchPanel
+            onSearch={handleSearch}
+            searchQuery={searchQuery}
+            searching={searching}
+            isLoading={isLoading}
+          />
+          <div className="mt-2 w-full max-w-3xl mx-auto">
+            <SearchResults
+              isLoading={isLoading}
+              posts={posts}
+              insights={insights as InsightsResponse | null}
+              searchInProgress={searching}
+              showResults={hasSearched && !searching}
+            />
           </div>
-          <div className="[&>div]:grid-cols-1 sm:[&>div]:grid-cols-2 md:[&>div]:grid-cols-3 lg:[&>div]:grid-cols-4 [&_.card-footer]:pt-0 [&_.card-footer]:text-xs [&_.card-header]:pb-2 [&_svg.size-4]:size-3">
-            <SectionCards />
-          </div>
-        </section>
-
-        {/* Analytics section with tabs */}
-        <section aria-labelledby="analytics-heading">
-          <div className="mb-4">
-            <h2 id="analytics-heading" className="text-lg font-semibold">
-              Analytics Overview
-            </h2>
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Performance Metrics</CardTitle>
-              <CardDescription>
-                View your performance metrics over time.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="daily" className="space-y-4">
-                <TabsList>
-                  <TabsTrigger value="daily">Daily</TabsTrigger>
-                  <TabsTrigger value="weekly">Weekly</TabsTrigger>
-                  <TabsTrigger value="monthly">Monthly</TabsTrigger>
-                </TabsList>
-                <TabsContent value="daily" className="space-y-4">
-                  <div className="h-[350px]">
-                    <ChartAreaInteractive />
-                  </div>
-                </TabsContent>
-                <TabsContent value="weekly" className="space-y-4">
-                  <div className="h-[350px]">
-                    <ChartAreaInteractive />
-                  </div>
-                </TabsContent>
-                <TabsContent value="monthly" className="space-y-4">
-                  <div className="h-[350px]">
-                    <ChartAreaInteractive />
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </section>
-
-        {/* Data table section */}
-        <section aria-labelledby="recent-activities-heading">
-          <div className="flex items-center justify-between mb-4">
-            <h2 id="recent-activities-heading" className="text-lg font-semibold">
-              Recent Activities
-            </h2>
-            <Button variant="link" size="sm" className="gap-1 text-primary">
-              View all
-              <MoveRight className="h-4 w-4" />
-            </Button>
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Activity Log</CardTitle>
-              <CardDescription>
-                A detailed log of all recent activities on your account.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DataTable data={data} />
-            </CardContent>
-          </Card>
-        </section>
-      </div>
-
-      {/* Footer */}
-      <div className="border-t py-4 px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <p className="text-sm text-muted-foreground">
-            © 2025 Your Company. All rights reserved.
-          </p>
-          <nav className="flex items-center gap-4 text-sm">
-            <a
-              href="#"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Help
-            </a>
-            <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-              Privacy
-            </a>
-            <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-              Terms
-            </a>
-          </nav>
         </div>
       </div>
-    </Card>
-  )
+    </div>
+  );
 }

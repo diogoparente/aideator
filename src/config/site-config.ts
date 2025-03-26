@@ -1,4 +1,4 @@
-export default {
+const siteConfig = {
   title: "aideator",
   description: "",
   url: "https://aideator.com",
@@ -35,3 +35,5 @@ export default {
     ],
   },
 };
+
+export default siteConfig;
