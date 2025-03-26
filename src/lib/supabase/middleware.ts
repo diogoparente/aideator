@@ -2,6 +2,30 @@ import { createServerClient } from '@supabase/ssr'
 import { AuthError } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Define public routes that don't require authentication
+const publicRoutes = [
+  '/',
+  '/en',
+  '/de',
+  '/auth',
+  '/login',
+  // Add any other public routes here
+]
+
+// Check if the current path matches any of the public routes
+const isPublicRoute = (path: string) => {
+  return publicRoutes.some(route => {
+    // Exact match
+    if (route === path) return true
+    // Path starts with route + '/'
+    if (path.startsWith(`${route}/`)) return true
+    // Special case for auth and login routes
+    if (route === '/auth' && path.startsWith('/auth')) return true
+    if (route === '/login' && path.startsWith('/login')) return true
+    return false
+  })
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -40,13 +64,15 @@ export async function updateSession(request: NextRequest) {
       error,
     } = await supabase.auth.getUser()
 
+    // Check if the current path is a public route
+    const isPublic = isPublicRoute(request.nextUrl.pathname)
+
     // If there's an authentication error and user is trying to access a protected route
     if (
       error &&
       error instanceof AuthError &&
       error.name === "AuthSessionMissingError" &&
-      !request.nextUrl.pathname.startsWith('/login') &&
-      !request.nextUrl.pathname.startsWith('/auth')
+      !isPublic
     ) {
       // Clear any invalid sessions by redirecting to login page
       const url = request.nextUrl.clone()
@@ -68,10 +94,9 @@ export async function updateSession(request: NextRequest) {
 
     if (
       !user &&
-      !request.nextUrl.pathname.startsWith('/login') &&
-      !request.nextUrl.pathname.startsWith('/auth')
+      !isPublic
     ) {
-      // no user, potentially respond by redirecting the user to the login page
+      // no user and not a public route, redirect to login page
       const url = request.nextUrl.clone()
       url.pathname = '/login'
       return NextResponse.redirect(url)
@@ -80,8 +105,8 @@ export async function updateSession(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Middleware error:', error)
 
-    // If we get an auth error, redirect to login and clear cookies
-    if (error instanceof AuthError && error.name === "AuthSessionMissingError") {
+    // If we get an auth error and it's not a public route, redirect to login and clear cookies
+    if (error instanceof AuthError && error.name === "AuthSessionMissingError" && !isPublicRoute(request.nextUrl.pathname)) {
       const url = request.nextUrl.clone()
       url.pathname = '/login'
 

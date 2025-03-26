@@ -7,6 +7,12 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Analytics } from "@vercel/analytics/react";
+import { NextIntlClientProvider } from "next-intl";
+import { ThemeProvider } from "next-themes";
+import { Shell } from "@/components/shell";
+
+// Import messages directly
+import enMessages from "../../messages/en.json";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,22 +34,32 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Set default locale
+  const locale = "en";
+
   return (
-    <html lang="en">
+    <html lang={locale} suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col justify-center`}
         suppressHydrationWarning
       >
-        {/* Analytics */}
-        <Analytics />
-        <SupabaseProvider>
-          <TooltipProvider>
-            <SidebarProvider>
-              <ErrorBoundary>{children}</ErrorBoundary>
-            </SidebarProvider>
-          </TooltipProvider>
-          <Toaster position="top-center" closeButton richColors />
-        </SupabaseProvider>
+        {/* Wrap the entire app with NextIntlClientProvider */}
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <NextIntlClientProvider locale={locale} messages={enMessages}>
+            {/* Analytics */}
+            <Analytics />
+            <SupabaseProvider>
+              <TooltipProvider>
+                <SidebarProvider>
+                  <ErrorBoundary>
+                    <Shell>{children}</Shell>
+                  </ErrorBoundary>
+                </SidebarProvider>
+              </TooltipProvider>
+              <Toaster position="top-center" closeButton richColors />
+            </SupabaseProvider>
+          </NextIntlClientProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

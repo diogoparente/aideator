@@ -1,0 +1,63 @@
+{
+  "HomePage": {
+    "sections": {
+      "hero": {
+        "headline": "AI-Powered SaaS Insights",
+        "title": "Discover Profitable SaaS Ideas from Reddit Discussions",
+        "subtitle": "Leverage AI to analyze Reddit conversations, identify market gaps, and validate your SaaS business ideas with real user pain points and market insights.",
+        "cta": "Start Discovering ideas",
+        "cards": [
+          { "metric": "100+", "title": "SaaS Ideas Generated" },
+          { "metric": "50+", "title": "Subrredits Analyzed" },
+          { "metric": "10K+", "title": "Posts Processed" }
+        ]
+      },
+      "benefits": {
+        "headline": "Benefits",
+        "title": "Why Use SaaS Insights?",
+        "subtitle": "Stop guessing what SaaS products to build. Our platform analyzes thousands of Reddit discussions to identify real market needs, validate your ideas, and provide actionable insights for launching successful SaaS businesses with confidence.",
+        "cards": [
+          {
+            "title": "AI-Powered Insights",
+            "description": "Advanced AI analyzes Reddit discussions to identify SaaS opportunities and market gaps",
+            "icon": "Sparkles"
+          },
+          {
+            "title": "Idea Validation",
+            "description": "Validate your SaaS concepts with real user pain points and market demand evidence",
+            "icon": "CircleCheck"
+          },
+          {
+            "title": "Competitive Analysis",
+            "description": "Understand the competitive landscape and identify untapped market segments",
+            "icon": "BarChart"
+          },
+          {
+            "title": "Implementation Roadmap",
+            "description": "Get actionable recommendations on how to build and launch your SaaS product",
+            "icon": "Map"
+          }
+        ]
+      }
+    },
+    "title": "Hello world!",
+    "about": "Go to the about page"
+  },
+  "AppLayout": {
+    "dashboard": "Dashboard",
+    "ideas": "Ideas",
+    "settings": "Settings",
+    "loading": "Loading..."
+  },
+  "search": {
+    "noResultsFound": "No results found",
+    "results": "Results",
+    "supportingDiscussions": "Supporting Discussions for {ideaName}",
+    "closeDetails": "Close Details",
+    "noSupportingDiscussions": "No supporting discussions available",
+    "targetAudience": "Target audience",
+    "keyFeatures": "Key features",
+    "supportingPosts": "Supporting posts",
+    "viewDetails": "View details"
+  }
+}
