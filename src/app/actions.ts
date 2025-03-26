@@ -53,7 +53,8 @@ export async function updateClickAction(
             providedId: playerId,
             authId: user?.id,
             isDev,
-            isVercel
+            isVercel,
+            requestedQty: qty
         });
 
         // For now, allow operations in Vercel to debug the issue
@@ -69,13 +70,37 @@ export async function updateClickAction(
             playerId = user.id;
         }
 
+        // First, get the current value to avoid race conditions
+        const { data: currentData, error: fetchError } = await supabase
+            .from('clicks')
+            .select('qty')
+            .eq('id', playerId)
+            .maybeSingle();
+
+        if (fetchError) {
+            console.error('Error fetching current qty:', fetchError);
+        }
+
+        // Get current value or default to 0
+        const currentQty = currentData?.qty || 0;
+
+        // Only update if the new value is higher than the current value
+        // This prevents race conditions on fast clicks
+        const newQty = Math.max(currentQty, qty);
+
+        console.log('Click update logic:', {
+            currentQty,
+            requestedQty: qty,
+            finalQty: newQty
+        });
+
         // Use upsert for better performance (creates or updates in a single operation)
         const { data, error } = await supabase
             .from('clicks')
             .upsert({
                 id: playerId,
                 user_id: userId,
-                qty: qty
+                qty: newQty
             }, {
                 onConflict: 'id',
                 ignoreDuplicates: false
@@ -93,7 +118,7 @@ export async function updateClickAction(
 
         return {
             success: true,
-            newCount: data?.qty || qty
+            newCount: data?.qty || newQty
         };
     } catch (error) {
         console.error('Update click action error:', error);

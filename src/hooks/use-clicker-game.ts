@@ -388,6 +388,10 @@ export function useClickerGame() {
             return;
         }
 
+        // Get current click count to use throughout this function call
+        // This prevents race conditions with rapid clicks
+        const currentCount = clickCount;
+
         try {
             // Re-verify authentication before proceeding
             const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
@@ -402,13 +406,13 @@ export function useClickerGame() {
             // Try to continue even without current user (for debugging)
             const effectiveUserId = currentUser?.id || user.id;
 
-            // Optimistic update
-            setClickCount(prev => prev + 1);
+            // Optimistic update (use atomically incremented value)
+            setClickCount(prevCount => prevCount + 1);
 
             // Log attempt before action
-            console.log(`Attempting to update clicks for user: ${effectiveUserId} (count: ${clickCount + 1})`);
+            console.log(`Attempting to update clicks for user: ${effectiveUserId} (count: ${currentCount + 1})`);
 
-            const result = await updateClickAction(effectiveUserId, effectiveUserId, clickCount + 1);
+            const result = await updateClickAction(effectiveUserId, effectiveUserId, currentCount + 1);
 
             console.log("Update result:", result);
 
@@ -434,7 +438,7 @@ export function useClickerGame() {
                         const { data: { user: refreshedUser } } = await supabase.auth.getUser();
                         if (refreshedUser) {
                             console.log("Session refreshed, retrying with user:", refreshedUser.id);
-                            const retryResult = await updateClickAction(refreshedUser.id, refreshedUser.id, clickCount + 1);
+                            const retryResult = await updateClickAction(refreshedUser.id, refreshedUser.id, currentCount + 1);
 
                             if (retryResult.success) {
                                 console.log("Retry successful:", retryResult);
@@ -461,8 +465,8 @@ export function useClickerGame() {
                 return;
             }
 
-            // Sync with confirmed server value if needed
-            if (result.newCount !== undefined && result.newCount !== clickCount + 1) {
+            // Sync with confirmed server value if needed - but only if it's greater than our current local state
+            if (result.newCount !== undefined && result.newCount > clickCount) {
                 setClickCount(result.newCount);
             }
         } catch (error) {
