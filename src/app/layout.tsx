@@ -51,9 +51,7 @@ export default function RootLayout({
             <SupabaseProvider>
               <TooltipProvider>
                 <SidebarProvider>
-                  <ErrorBoundary>
-                    <Shell>{children}</Shell>
-                  </ErrorBoundary>
+                  <ErrorBoundary>{children}</ErrorBoundary>
                 </SidebarProvider>
               </TooltipProvider>
               <Toaster position="top-center" closeButton richColors />

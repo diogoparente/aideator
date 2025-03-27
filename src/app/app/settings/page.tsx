@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser } from "@/hooks/useUser";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
@@ -17,11 +17,11 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 
 export default function SettingsPage() {
-  const { isLoaded, user } = useUser();
+  const { loading, user } = useUser();
   const [activeTab, setActiveTab] = useState("account");
 
   // Check if the user is loaded
-  if (!isLoaded || !user) {
+  if (loading || !user) {
     return <div>Loading...</div>;
   }
 

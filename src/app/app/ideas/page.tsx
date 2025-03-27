@@ -1,6 +1,5 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
 import { PlusIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,12 +11,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useUser } from "@/hooks/useUser";
 
 export default function IdeasPage() {
-  const { isLoaded } = useUser();
+  const { loading } = useUser();
 
   // Check if the user is loaded
-  if (!isLoaded) {
+  if (!loading) {
     return <div>Loading...</div>;
   }
 
@@ -84,8 +84,8 @@ export default function IdeasPage() {
                   idea.status === "New"
                     ? "default"
                     : idea.status === "In Progress"
-                      ? "outline"
-                      : "secondary"
+                    ? "outline"
+                    : "secondary"
                 }
               >
                 {idea.status}

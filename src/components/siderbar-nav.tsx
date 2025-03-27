@@ -6,6 +6,10 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { NavItem } from "@/types";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
+import LogoutButton from "@/components/logout-button";
 
 export interface SidebarNavProps extends React.HTMLAttributes<HTMLDivElement> {
   items: NavItem[];
@@ -61,6 +65,10 @@ export function SidebarNav({ items, className, ...props }: SidebarNavProps) {
             </span>
           );
         })}
+      </div>
+      <div className="flex gap-2">
+        <ThemeToggle />
+        <LogoutButton />
       </div>
     </div>
   );

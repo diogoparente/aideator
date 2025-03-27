@@ -32,12 +32,14 @@ export function useUser(): UseUserReturn {
     });
 
     // Listen for changes on auth state
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
-      
+
       if (event === "SIGNED_IN") {
         // Redirect to dashboard after successful sign in
-        router.push("/dashboard");
+        router.push("/app/dashboard");
       }
 
       if (event === "SIGNED_OUT") {
@@ -61,8 +63,8 @@ export function useUser(): UseUserReturn {
 
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      toast.error(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : "An error occurred");
+      toast.error(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setLoading(false);
     }
@@ -76,8 +78,8 @@ export function useUser(): UseUserReturn {
 
       if (error) throw error;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      toast.error(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : "An error occurred");
+      toast.error(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setLoading(false);
     }

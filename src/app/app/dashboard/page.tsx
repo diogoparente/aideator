@@ -74,16 +74,6 @@ export default function Dashboard() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (loading) return;
-
-    if (!user) {
-      // Redirect to login if no user
-      window.location.href = "/login";
-      return;
-    }
-  }, [user, loading]);
-
-  useEffect(() => {
     if (posts.length > 0) {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }

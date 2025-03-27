@@ -1,27 +1,35 @@
-import { AppSidebar } from "@/components/app-sidebar";
-import { SidebarTrigger, SidebarContent } from "@/components/ui/sidebar";
+"use client";
 
-const AppLayout = ({ children }: { children: React.ReactNode }) => {
+import { Search, Lightbulb, Cog } from "lucide-react";
+import { NavItem } from "@/types";
+import { useTranslations } from "next-intl";
+import { useUser } from "@/hooks/useUser";
+import { SidebarNav } from "@/components/siderbar-nav";
+import { ThemeToggle } from "@/components/theme-toggle";
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const t = useTranslations("AppLayout");
+  const { user, loading } = useUser();
+  const navItems: NavItem[] = [
+    {
+      title: t("dashboard"),
+      href: "/app/dashboard",
+      icon: Search,
+    },
+    { title: t("ideas"), href: "/app/ideas", icon: Lightbulb },
+    {
+      title: t("settings"),
+      href: "/app/settings",
+      icon: Cog,
+    },
+  ];
+
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <div className="flex-shrink-0">
-        <AppSidebar />
-        <SidebarTrigger />
-      </div>
-
-      {/* Main content */}
-      <div className="flex-grow overflow-auto">
-        <div className="w-full max-w-4xl mx-auto mb-8 sm:max-w-6xl sm:mx-auto md:max-w-8xl md:mx-auto lg:max-w-10xl lg:mx-auto p-4">
-          <div className="flex flex-col h-full">
-            <main className="flex-1">
-              <SidebarContent>{children}</SidebarContent>
-            </main>
-          </div>
-        </div>
+    <div className="flex h-screen">
+      <SidebarNav items={navItems} />
+      <div className="flex-1 overflow-auto">
+        <main className="container mx-auto px-6 py-8 h-full">{children}</main>
       </div>
     </div>
   );
-};
-
-export default AppLayout;
+}
