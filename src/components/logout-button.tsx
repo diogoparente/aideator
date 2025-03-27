@@ -31,7 +31,7 @@ const LogoutButton = () => {
 
   return (
     <Button
-      variant="destructive"
+      variant="destructive-outline"
       className="flex-1 w-full cursor-pointer"
       onClick={handleLogout}
     >

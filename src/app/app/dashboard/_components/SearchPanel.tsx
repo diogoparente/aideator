@@ -122,7 +122,7 @@ export default function SearchPanel({
                   className="rounded-full h-12 w-12 p-0"
                   title="Filter by Subreddits"
                 >
-                  <Filter className="h-5 w-5 text-secondary" />
+                  <Filter className="h-5 w-5 text-muted-foreground" />
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-72 p-0" align="end">
@@ -191,7 +191,7 @@ export default function SearchPanel({
               {isLoading || searching ? (
                 <LoadingSpinner />
               ) : (
-                <Search className="h-5 w-5 text-secondary" />
+                <Search className="h-5 w-5 text-muted-foreground" />
               )}
             </Button>
           </div>

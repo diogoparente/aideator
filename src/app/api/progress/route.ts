@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 // Store active SSE clients
 const clients = new Set<ReadableStreamController<Uint8Array>>();
@@ -15,7 +15,7 @@ const THROTTLE_INTERVAL = 300;
 // Throttle large jumps in progress
 function getThrottledProgress(
   controller: ReadableStreamController<Uint8Array>,
-  newProgress: number,
+  newProgress: number
 ): number {
   const lastProgress = lastProgressValues.get(controller) || 0;
 
@@ -28,9 +28,55 @@ function getThrottledProgress(
   return newProgress;
 }
 
+// Helper function to safely send data to a client
+function safelySendToClient(
+  controller: ReadableStreamController<Uint8Array>,
+  data: string
+): boolean {
+  try {
+    controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`));
+    return true;
+  } catch (error) {
+    console.error("Error sending data to client:", error);
+    // If we get an invalid state error, remove this client
+    if (error instanceof Error && error.message.includes("Invalid state")) {
+      clients.delete(controller);
+      lastProgressValues.delete(controller);
+    }
+    return false;
+  }
+}
+
+// Helper function to close a client connection
+function closeClientConnection(
+  controller: ReadableStreamController<Uint8Array>
+) {
+  try {
+    // Send a final message indicating completion
+    safelySendToClient(
+      controller,
+      JSON.stringify({ progress: 1, stage: "Complete", done: true })
+    );
+
+    // Clean up this client
+    clients.delete(controller);
+    lastProgressValues.delete(controller);
+
+    // Close the controller
+    controller.close();
+  } catch (error) {
+    console.error("Error closing client connection:", error);
+  }
+}
+
 // Helper function to send progress updates to all connected clients
 export function sendProgressUpdate(progress: number, stage: string) {
+  const completedClients = new Set<ReadableStreamController<Uint8Array>>();
+
   clients.forEach((controller) => {
+    // Skip if this client has already been marked for cleanup
+    if (completedClients.has(controller)) return;
+
     try {
       // Apply throttling to progress value
       const throttledProgress = getThrottledProgress(controller, progress);
@@ -40,22 +86,44 @@ export function sendProgressUpdate(progress: number, stage: string) {
 
       const data = JSON.stringify({ progress: throttledProgress, stage });
       console.log(
-        ` [Progress API] Sending update: ${stage} (${Math.round(throttledProgress * 100)}%)`,
+        ` [Progress API] Sending update: ${stage} (${Math.round(
+          throttledProgress * 100
+        )}%)`
       );
 
-      controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`));
+      // If we're at 100% progress, mark this client for completion
+      if (progress >= 1) {
+        completedClients.add(controller);
+        closeClientConnection(controller);
+        return;
+      }
+
+      // Send the update
+      const sendSuccessful = safelySendToClient(controller, data);
+
+      // If sending failed, don't schedule any more updates for this client
+      if (!sendSuccessful) return;
 
       // If we throttled the progress and it's not at 100% yet, schedule the next update
       if (throttledProgress < progress && throttledProgress < 1) {
         setTimeout(() => {
-          // Only send the next update if the client is still connected
-          if (clients.has(controller)) {
+          // Only send the next update if the client is still connected and not completed
+          if (clients.has(controller) && !completedClients.has(controller)) {
             sendProgressUpdate(progress, stage);
           }
         }, THROTTLE_INTERVAL);
       }
     } catch (error) {
       console.error("Error sending progress update:", error);
+      // If we encounter an error, mark this client for cleanup
+      completedClients.add(controller);
+    }
+  });
+
+  // Clean up any completed clients
+  completedClients.forEach((controller) => {
+    if (clients.has(controller)) {
+      closeClientConnection(controller);
     }
   });
 }
@@ -73,17 +141,19 @@ export async function GET(req: NextRequest) {
       lastProgressValues.set(controller, 0);
 
       // Send initial progress
-      controller.enqueue(
-        new TextEncoder().encode(
-          `data: ${JSON.stringify({ progress: 0, stage: "Connecting" })}\n\n`,
-        ),
+      safelySendToClient(
+        controller,
+        JSON.stringify({
+          progress: 0,
+          stage: "Initializing...",
+        })
       );
     },
     cancel(controller) {
       clients.delete(controller);
       lastProgressValues.delete(controller);
       console.log(
-        `[Progress API] Client disconnected (remaining: ${clients.size})`,
+        `[Progress API] Client disconnected (remaining: ${clients.size})`
       );
     },
   });
@@ -95,4 +165,9 @@ export async function GET(req: NextRequest) {
       Connection: "keep-alive",
     },
   });
+}
+
+// Ping endpoint for keep-alive
+export async function HEAD() {
+  return new NextResponse(null, { status: 200 });
 }

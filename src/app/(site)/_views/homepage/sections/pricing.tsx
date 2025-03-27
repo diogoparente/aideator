@@ -139,7 +139,7 @@ export function PricingSection() {
                         frequency.value === option.value
                           ? "bg-primary/90 text-primary-foreground"
                           : "bg-transparent text-muted-foreground hover:bg-primary/10",
-                        "cursor-pointer rounded-full px-2.5 py-2 transition-all",
+                        "cursor-pointer rounded-full px-2.5 py-2 transition-all"
                       )}
                       key={option.value}
                       htmlFor={option.value}
@@ -163,7 +163,7 @@ export function PricingSection() {
               className={cn(
                 "isolate mx-auto mt-4 mb-28 grid max-w-md grid-cols-1 gap-8 lg:mx-0 lg:max-w-none",
                 tiers.length === 2 ? "lg:grid-cols-2" : "",
-                tiers.length === 3 ? "lg:grid-cols-3" : "",
+                tiers.length === 3 ? "lg:grid-cols-3" : ""
               )}
             >
               {tiers.map((tier) => (
@@ -174,7 +174,7 @@ export function PricingSection() {
                       ? "bg-primary text-primary-foreground ring-primary"
                       : "bg-card text-card-foreground ring-border",
                     "max-w-xs ring-1 rounded-3xl p-8 xl:p-10",
-                    tier.highlighted ? "fancyGlassContrast" : "",
+                    tier.highlighted ? "fancyGlassContrast" : ""
                   )}
                 >
                   <h3
@@ -183,7 +183,7 @@ export function PricingSection() {
                       tier.featured
                         ? "text-primary-foreground"
                         : "text-foreground",
-                      "text-2xl font-bold tracking-tight",
+                      "text-2xl font-bold tracking-tight"
                     )}
                   >
                     {tier.name}
@@ -193,7 +193,7 @@ export function PricingSection() {
                       tier.featured
                         ? "text-primary-foreground/80"
                         : "text-muted-foreground",
-                      "mt-4 text-sm leading-6",
+                      "mt-4 text-sm leading-6"
                     )}
                   >
                     {tier.description}
@@ -208,7 +208,7 @@ export function PricingSection() {
                         tier.discountPrice &&
                           tier.discountPrice[frequency.value]
                           ? "line-through"
-                          : "",
+                          : ""
                       )}
                     >
                       {tier.price[frequency.value]}
@@ -218,7 +218,7 @@ export function PricingSection() {
                       className={cn(
                         tier.featured
                           ? "text-primary-foreground"
-                          : "text-foreground",
+                          : "text-foreground"
                       )}
                     >
                       {tier.discountPrice[frequency.value]}
@@ -229,7 +229,7 @@ export function PricingSection() {
                         tier.featured
                           ? "text-primary-foreground/80"
                           : "text-muted-foreground",
-                        "text-sm font-semibold leading-6",
+                        "text-sm font-semibold leading-6"
                       )}
                     >
                       {frequency.priceSuffix}
@@ -240,7 +240,7 @@ export function PricingSection() {
                     aria-describedby={tier.id}
                     className={cn(
                       "flex mt-6 shadow-sm",
-                      tier.soldOut ? "pointer-events-none" : "",
+                      tier.soldOut ? "pointer-events-none" : ""
                     )}
                   >
                     <Button
@@ -249,11 +249,11 @@ export function PricingSection() {
                       className={cn(
                         "w-full",
                         !tier.highlighted && !tier.featured
-                          ? "bg-secondary text-secondary-foreground hover:bg-secondary/90"
+                          ? "bg-muted-foreground text-muted-foreground-foreground hover:bg-muted-foreground/90"
                           : "bg-primary hover:bg-primary/90 text-primary-foreground",
                         tier.featured || tier.soldOut
                           ? "bg-background text-foreground hover:bg-muted"
-                          : "hover:opacity-80 transition-opacity",
+                          : "hover:opacity-80 transition-opacity"
                       )}
                       variant={tier.highlighted ? "default" : "outline"}
                     >
@@ -266,7 +266,7 @@ export function PricingSection() {
                       tier.featured
                         ? "text-primary-foreground/80"
                         : "text-muted-foreground",
-                      "mt-8 space-y-3 text-sm leading-6 xl:mt-10",
+                      "mt-8 space-y-3 text-sm leading-6 xl:mt-10"
                     )}
                   >
                     {tier.features.map((feature) => (
@@ -277,7 +277,7 @@ export function PricingSection() {
                             tier.highlighted
                               ? "text-primary"
                               : "text-muted-foreground",
-                            "h-6 w-5 flex-none",
+                            "h-6 w-5 flex-none"
                           )}
                           aria-hidden="true"
                         />

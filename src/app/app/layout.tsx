@@ -28,7 +28,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen">
       <SidebarNav items={navItems} />
       <div className="flex-1 overflow-auto">
-        <main className="container mx-auto px-6 py-8 h-full">{children}</main>
+        <main className="container mx-auto px-6 h-full">{children}</main>
       </div>
     </div>
   );

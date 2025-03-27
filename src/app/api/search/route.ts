@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       console.log("❌ [Search API] Missing query parameter");
       return NextResponse.json(
         { error: "Query parameter is required" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -90,13 +90,13 @@ export async function GET(request: NextRequest) {
 
     // Step 2: Search Reddit for posts with the enhanced query
     console.log(
-      "🔄 [Search API] Searching Reddit for posts with enhanced query",
+      "🔄 [Search API] Searching Reddit for posts with enhanced query"
     );
     const posts = await searchRedditPosts(
       enhancedQuery,
       categories,
       customSubreddits,
-      limit,
+      limit
     );
     sendProgressUpdate(0.5, `Found ${posts.length} Reddit posts`);
 
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
     sendProgressUpdate(1, "Search failed: An error occurred");
     return NextResponse.json(
       { error: "Failed to process search request" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
@@ -136,7 +136,7 @@ async function enhanceSearchQuery(originalQuery: string): Promise<string> {
   // Check if Deepseek API key is configured
   if (!process.env.DEEPSEEK_API_KEY) {
     console.log(
-      "❌ [Search API] Missing Deepseek API key in environment variables",
+      "❌ [Search API] Missing Deepseek API key in environment variables"
     );
     throw new Error("Deepseek API key is not configured");
   }
@@ -157,7 +157,7 @@ async function enhanceSearchQuery(originalQuery: string): Promise<string> {
 
   try {
     console.log(
-      "🌐 [Search API] Sending query enhancement request to Deepseek API",
+      "🌐 [Search API] Sending query enhancement request to Deepseek API"
     );
 
     const response = await fetch(
@@ -183,12 +183,12 @@ async function enhanceSearchQuery(originalQuery: string): Promise<string> {
           ],
           temperature: 0.3,
         }),
-      },
+      }
     );
 
     if (!response.ok) {
       console.error(
-        `❌ [Search API] Error enhancing query: ${response.status} ${response.statusText}`,
+        `❌ [Search API] Error enhancing query: ${response.status} ${response.statusText}`
       );
       // Fall back to original query if enhancement fails
       return originalQuery;
@@ -215,14 +215,14 @@ async function enhanceSearchQuery(originalQuery: string): Promise<string> {
  * Generates insights from posts using Deepseek
  */
 async function generateInsights(
-  posts: RedditPost[],
+  posts: RedditPost[]
 ): Promise<InsightsResponse> {
   console.log("🔄 [Search API] Starting insights generation");
 
   // Check if Deepseek API key is configured
   if (!process.env.DEEPSEEK_API_KEY) {
     console.log(
-      "❌ [Search API] Missing Deepseek API key in environment variables",
+      "❌ [Search API] Missing Deepseek API key in environment variables"
     );
     throw new Error("Deepseek API key is not configured");
   }
@@ -310,7 +310,10 @@ async function generateInsights(
     sendProgressUpdate(0.7, "Generating insights with AI");
     console.log("🌐 [Search API] Sending request to Deepseek API");
     console.log(
-      `🔑 [Search API] Using API key: ${process.env.DEEPSEEK_API_KEY?.substring(0, 5)}...`,
+      `🔑 [Search API] Using API key: ${process.env.DEEPSEEK_API_KEY?.substring(
+        0,
+        5
+      )}...`
     );
 
     const startTime = Date.now();
@@ -338,7 +341,7 @@ async function generateInsights(
           response_format: { type: "json_object" },
           temperature: 0.7,
         }),
-      },
+      }
     );
 
     const responseTime = Date.now() - startTime;
@@ -346,7 +349,7 @@ async function generateInsights(
 
     if (!response.ok) {
       console.error(
-        `❌ [Search API] Error response: ${response.status} ${response.statusText}`,
+        `❌ [Search API] Error response: ${response.status} ${response.statusText}`
       );
       throw new Error(`Deepseek API error: ${response.status}`);
     }
@@ -384,11 +387,11 @@ async function generateInsights(
     } catch (parseError) {
       console.error(
         "❌ [Search API] Failed to parse content as JSON:",
-        parseError,
+        parseError
       );
       console.log(
         "📄 [Search API] Content preview:",
-        content.substring(0, 200) + "...",
+        content.substring(0, 200) + "..."
       );
       throw new Error("Failed to parse Deepseek response as JSON");
     }
@@ -424,45 +427,27 @@ async function generateInsights(
  */
 export async function POST(request: NextRequest) {
   try {
-    const { supportingPostIds } = await request.json();
+    const body = await request.json();
+    const { supportingPostIds, allPosts } = body;
 
-    if (!supportingPostIds || !Array.isArray(supportingPostIds)) {
+    if (!supportingPostIds || !allPosts) {
       return NextResponse.json(
-        { error: "supportingPostIds array is required" },
-        { status: 400 },
+        { error: "Missing required fields" },
+        { status: 400 }
       );
     }
 
-    const searchParams = request.nextUrl.searchParams;
-    const allPostsJson = searchParams.get("allPosts");
+    // Filter posts based on supportingPostIds
+    const supportingPosts = allPosts.filter((post: any) =>
+      supportingPostIds.includes(post.id)
+    );
 
-    if (!allPostsJson) {
-      return NextResponse.json(
-        { error: "allPosts parameter is required" },
-        { status: 400 },
-      );
-    }
-
-    try {
-      const allPosts = JSON.parse(
-        decodeURIComponent(allPostsJson),
-      ) as RedditPost[];
-      const filteredPosts = allPosts.filter((post) =>
-        supportingPostIds.includes(post.id),
-      );
-
-      return NextResponse.json({ posts: filteredPosts });
-    } catch (error) {
-      return NextResponse.json(
-        { error: "Invalid allPosts JSON" },
-        { status: 400 },
-      );
-    }
+    return NextResponse.json({ posts: supportingPosts });
   } catch (error) {
-    console.error("❌ [Search API] Error fetching posts for idea:", error);
+    console.error("Error processing search request:", error);
     return NextResponse.json(
-      { error: "Failed to fetch posts for idea" },
-      { status: 500 },
+      { error: "Internal server error" },
+      { status: 500 }
     );
   }
 }

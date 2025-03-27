@@ -32,7 +32,7 @@ const RedditDiscussionsTable: React.FC<RedditDiscussionsTableProps> = ({
                   href={post.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-secondary hover:underline"
+                  className="text-muted-foreground hover:underline"
                 >
                   {post.title}
                 </a>
